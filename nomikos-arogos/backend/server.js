@@ -106,7 +106,7 @@ async function analyzeWithClaude({ question, area, lang, mode, document, sources
   const model = mode === "deep" ? CLAUDE_DEEP_MODEL : CLAUDE_QUICK_MODEL;
   const msg = await anthropic.messages.create({
     model,
-    max_tokens: mode === "deep" ? 3000 : 1500,
+    max_tokens: mode === "deep" ? 8000 : 4000,
     // Note: Opus 4.7+ rejects temperature/top_p — so we don't set them.
     system: buildSystemPrompt(lang, area, sources),
     messages: [{ role: "user", content: buildUserContent({ question, document }) }],
