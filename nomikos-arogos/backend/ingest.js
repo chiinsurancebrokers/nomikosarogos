@@ -65,6 +65,9 @@ async function ingestOne(src) {
   }
   text = text.replace(/\u0000/g, "");
 
+  // Postgres text columns reject NUL bytes (0x00); strip them (some PDFs extract them).
+  text = text.replace(/\u0000/g, "");
+
   const rows = src.type === "decisions" ? chunkDecisions(text) : chunkCode(text);
   console.log(`  ${rows.length} chunks`);
 
