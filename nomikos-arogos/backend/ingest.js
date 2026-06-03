@@ -63,6 +63,7 @@ async function ingestOne(src) {
     );
     return 0;
   }
+  text = text.replace(/\u0000/g, "");
 
   const rows = src.type === "decisions" ? chunkDecisions(text) : chunkCode(text);
   console.log(`  ${rows.length} chunks`);
