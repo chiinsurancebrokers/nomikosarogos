@@ -6,6 +6,6 @@ export default defineConfig({
   preview: {
     host: true,
     port: Number(process.env.PORT) || 4173,
-    allowedHosts: true,
+    allowedHosts: true, // accept Railway's proxied host (and any custom domain you add)
   },
 });
