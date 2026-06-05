@@ -1,0 +1,26 @@
+[
+  {
+    "type": "code",
+    "code_name": "Αστικός Κώδικας",
+    "area": "civil",
+    "path": "./pdfs/astikos_kodikas.pdf"
+  },
+  {
+    "type": "code",
+    "code_name": "Κώδικας Πολιτικής Δικονομίας",
+    "area": "civil",
+    "path": "./pdfs/kodikas_politikis_dikonomias.pdf"
+  },
+  {
+    "type": "code",
+    "code_name": "Ποινικός Κώδικας",
+    "area": "criminal",
+    "path": "./pdfs/poinikos_kodikas.pdf"
+  },
+  {
+    "type": "code",
+    "code_name": "Κώδικας Ποινικής Δικονομίας",
+    "area": "criminal",
+    "path": "./pdfs/kodikas_poinikis_dikonomias.pdf"
+  }
+]
