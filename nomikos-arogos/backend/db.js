@@ -29,3 +29,21 @@ export async function initSchema() {
   );
   await pool.query("CREATE INDEX IF NOT EXISTS chunks_area_idx ON chunks (area)");
 }
+
+// Stores 👍/👎 on answers so you can find which questions got weak answers and improve.
+// NOTE: `question` can contain personal data — see the privacy note in the README.
+export async function ensureFeedbackSchema() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS feedback (
+      id         BIGSERIAL PRIMARY KEY,
+      user_id    TEXT,
+      rating     TEXT NOT NULL,          -- 'up' | 'down'
+      area       TEXT,
+      mode       TEXT,
+      question   TEXT,
+      answer     TEXT,
+      sources    JSONB,
+      comment    TEXT,
+      created_at TIMESTAMPTZ DEFAULT now()
+    )`);
+}

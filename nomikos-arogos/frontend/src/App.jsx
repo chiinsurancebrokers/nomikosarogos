@@ -30,6 +30,9 @@ const T = {
     attach: "Επισύναψη εγγράφου", remove: "Αφαίρεση",
     examplesT: "Παραδείγματα", ask: "Ρωτήστε", asking: "Αναζήτηση στους Κώδικες…",
     answerT: "Καθοδήγηση", sourcesT: "Πηγές", again: "Νέα ερώτηση",
+    fbQ: "Σας βοήθησε αυτή η απάντηση;", fbYes: "Ναι", fbNo: "Όχι",
+    fbThanks: "Ευχαριστούμε για την ανατροφοδότηση.",
+    fbCommentPh: "Τι έλειπε ή τι ήταν λάθος; (προαιρετικό)", fbSend: "Αποστολή",
     verifyT: "Έλεγχος δεύτερου μοντέλου",
     verdicts: { supported: "Επιβεβαιωμένο από τις πηγές", partially_supported: "Εν μέρει επιβεβαιωμένο", unsupported: "Μη επιβεβαιωμένο — προσοχή", unverified: "Δεν ελέγχθηκε" },
     aidT: "Δωρεάν Νομική Βοήθεια (ν. 3226/2004)",
@@ -60,6 +63,9 @@ const T = {
     attach: "Attach document", remove: "Remove",
     examplesT: "Examples", ask: "Ask", asking: "Searching the Codes…",
     answerT: "Guidance", sourcesT: "Sources", again: "New question",
+    fbQ: "Did this answer help you?", fbYes: "Yes", fbNo: "No",
+    fbThanks: "Thank you for the feedback.",
+    fbCommentPh: "What was missing or wrong? (optional)", fbSend: "Send",
     verifyT: "Second-model check",
     verdicts: { supported: "Supported by sources", partially_supported: "Partially supported", unsupported: "Unsupported — caution", unverified: "Not checked" },
     aidT: "Free Legal Aid (Law 3226/2004)",
@@ -205,8 +211,23 @@ function AuthScreen({ lang, setLang }) {
 }
 
 // ── Main app ──────────────────────────────────────────────────────────────────
+function useIsMobile(breakpoint = 820) {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" && window.matchMedia(`(max-width:${breakpoint}px)`).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width:${breakpoint}px)`);
+    const onChange = () => setIsMobile(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 function MainApp({ lang, setLang, onSignOut }) {
   const t = T[lang];
+  const isMobile = useIsMobile();
   const [area, setArea] = useState("civil");
   const [situation, setSituation] = useState("");
   const [mode, setMode] = useState("quick");
@@ -215,13 +236,32 @@ function MainApp({ lang, setLang, onSignOut }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showDis, setShowDis] = useState(true);
+  const [fb, setFb] = useState(null);          // null | 'down-open' | 'sent'
+  const [fbComment, setFbComment] = useState("");
   const answerRef = useRef(null);
 
   useEffect(() => { if (answer && answerRef.current) answerRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); }, [answer]);
 
+  async function sendFeedback(rating, comment) {
+    setFb("sent");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token || !answer) return;
+      await fetch(`${API_URL}/api/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          rating, comment: comment || "", area, mode,
+          question: situation.trim(), answer: answer.analysis, sources: answer.sources,
+        }),
+      });
+    } catch { /* feedback is best-effort; never block the user */ }
+  }
+
   async function ask() {
     if ((!situation.trim() && !docFile) || loading) return;
-    setLoading(true); setError(""); setAnswer(null);
+    setLoading(true); setError(""); setAnswer(null); setFb(null); setFbComment("");
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
@@ -275,7 +315,7 @@ function MainApp({ lang, setLang, onSignOut }) {
         </div>
       </header>
 
-      <main style={{ maxWidth: 1080, margin: "0 auto", padding: "8px 24px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 300px", gap: 26, alignItems: "start" }}>
+      <main style={{ maxWidth: 1080, margin: "0 auto", padding: isMobile ? "8px 16px" : "8px 24px", display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0,1fr) 300px", gap: isMobile ? 18 : 26, alignItems: "start" }}>
         <div>
           <div style={{ fontFamily: "'Spectral', serif", fontWeight: 600, fontSize: 19, color: C.ink, margin: "12px 0" }}>{t.areaQ}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
@@ -360,6 +400,26 @@ function MainApp({ lang, setLang, onSignOut }) {
 
                     {answer.disclaimer && <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.line}`, fontSize: 12.5, color: C.muted, lineHeight: 1.5 }}>{answer.disclaimer}</div>}
 
+                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.line}` }}>
+                      {fb === "sent" ? (
+                        <div style={{ fontSize: 13.5, color: C.ok }}>✓ {t.fbThanks}</div>
+                      ) : (
+                        <>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 13.5, color: C.muted }}>{t.fbQ}</span>
+                            <button onClick={() => sendFeedback("up")} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 14, color: C.navy }}>👍 {t.fbYes}</button>
+                            <button onClick={() => setFb("down-open")} style={{ background: fb === "down-open" ? "rgba(156,59,46,.08)" : "transparent", border: `1px solid ${fb === "down-open" ? C.alert : C.line}`, borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 14, color: C.alert }}>👎 {t.fbNo}</button>
+                          </div>
+                          {fb === "down-open" && (
+                            <div style={{ marginTop: 10 }}>
+                              <textarea value={fbComment} onChange={(e) => setFbComment(e.target.value)} placeholder={t.fbCommentPh} rows={2} style={{ width: "100%", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13.5, color: C.text, resize: "vertical", fontFamily: "'IBM Plex Sans', sans-serif" }} />
+                              <button onClick={() => sendFeedback("down", fbComment)} style={{ marginTop: 8, background: C.ink, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif" }}>{t.fbSend}</button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+
                     <button onClick={() => { setAnswer(null); setSituation(""); setDocFile(null); }} style={{ marginTop: 14, background: "transparent", border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 16px", color: C.navy, cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif" }}>↺ {t.again}</button>
                   </>
                 )}
@@ -368,7 +428,7 @@ function MainApp({ lang, setLang, onSignOut }) {
           )}
         </div>
 
-        <aside style={{ display: "flex", flexDirection: "column", gap: 16, position: "sticky", top: 16 }}>
+        <aside style={{ display: "flex", flexDirection: "column", gap: 16, position: isMobile ? "static" : "sticky", top: 16 }}>
           <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "16px 18px" }}>
             <div style={{ fontWeight: 600, color: C.navy, marginBottom: 6, fontSize: 15 }}>{t.aidT}</div>
             <div style={{ fontSize: 13.5, lineHeight: 1.55 }}>{t.aidBody}</div>

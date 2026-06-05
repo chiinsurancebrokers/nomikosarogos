@@ -106,6 +106,18 @@ This assumes asymmetric signing keys (ES256/RS256), the default for new Supabase
 - Add a clear consent + privacy notice; keep the "information, not advice" line everywhere.
 - Keep `ALLOWED_ORIGIN` locked to your domain.
 
+## Feedback (learning what to improve)
+
+Each answer shows 👍 / 👎; `POST /api/feedback` (auth-required) stores the rating, the
+question, the answer, the cited sources, and an optional comment in a `feedback` table.
+Query it to find which questions got weak answers and prioritise fixes (prompt, sources,
+retrieval).
+
+> **Privacy:** the stored `question` can contain personal/sensitive data (a real legal
+> situation). Treat the `feedback` table as personal data under GDPR — inform users in your
+> privacy notice, set a retention period, restrict access, and consider anonymising or
+> dropping the raw `question`/`answer` once you've learned from it. Keep it in your EU region.
+
 ## Cost control (so the free tier survives)
 
 - Default to Sonnet (`quick`); reserve Opus + the OpenAI verifier for the

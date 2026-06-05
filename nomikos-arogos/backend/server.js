@@ -18,6 +18,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { retrieveSources } from "./retrieve.js";
 import { requireAuth } from "./auth.js";
+import { pool, ensureFeedbackSchema } from "./db.js";
 
 const {
   ANTHROPIC_API_KEY,
@@ -60,9 +61,14 @@ function buildSystemPrompt(lang, area, sources) {
 
 Reply ENTIRELY in ${replyLang}, in plain, warm, non-intimidating language.
 
-GROUND your answer in the RETRIEVED SOURCES below. Cite the relevant article using its reference (e.g. "Αστικός Κώδικας άρθρο 197"). If the sources do not cover the question, say so plainly and do NOT invent article numbers, decisions, or penalties.
+GROUNDING RULES — follow strictly:
+- Base every legal statement ONLY on the RETRIEVED SOURCES below. Never state an article number, court decision, deadline, or penalty that is not present in the sources. Never invent or guess the law.
+- Decide which of three cases applies before answering:
+  (A) The sources clearly contain the provision that answers the question → give the full structured answer, citing each article by its reference (e.g. "Αστικός Κώδικας άρθρο 197").
+  (B) The question is too vague or ambiguous to identify the correct provision — e.g. a term with several legal meanings (such as «εγγύηση»: μίσθωσης / δανείου / καλής εκτέλεσης), or missing facts that decide which law applies → DO NOT guess and DO NOT output the structured answer. Instead reply briefly and warmly, explain you need a specific detail to find the exact applicable law, and ask 1–3 concrete clarifying questions. Then stop.
+  (C) The question is clear but the sources do NOT contain the relevant provision → say plainly that you do not have the specific article in your available sources. Give at most short, cautious general orientation, explicitly marked as NOT based on a specific provision, and tell the user to verify against the official Code and consult a lawyer. Never fabricate article numbers, decisions, or penalties.
 
-Structure (translate labels to ${replyLang}):
+When case (A) applies, structure the answer (translate labels to ${replyLang}):
 1. In short
 2. Relevant legal framework — articles, with references; for case-law direction note Άρειος Πάγος (civil/criminal) or ΣτΕ (administrative), but never cite a decision number unless it appears in the sources.
 3. Practical next steps
@@ -175,6 +181,32 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
   }
 });
 
+app.post("/api/feedback", requireAuth, async (req, res) => {
+  try {
+    const { rating, area, mode, question, answer, sources, comment } = req.body || {};
+    if (rating !== "up" && rating !== "down") return res.status(400).json({ error: "Invalid rating" });
+    await pool.query(
+      `INSERT INTO feedback (user_id, rating, area, mode, question, answer, sources, comment)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        req.user.id,
+        rating,
+        area || null,
+        mode || null,
+        question || null,
+        answer || null,
+        sources ? JSON.stringify(sources) : null,
+        comment ? String(comment).slice(0, 1000) : null,
+      ]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("feedback error:", e?.message);
+    res.status(500).json({ error: "Could not save feedback" });
+  }
+});
+
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
+ensureFeedbackSchema().catch((e) => console.error("feedback schema init failed:", e?.message));
 app.listen(PORT, () => console.log(`Νομικός Αρωγός backend listening on :${PORT}`));
