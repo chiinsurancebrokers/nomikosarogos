@@ -10,6 +10,7 @@
 
 import { embed } from "./embeddings.js";
 import { pool } from "./db.js";
+import { ANCHORS } from "./anchors.js";
 
 // Strip Greek accents/diacritics so "μίσθωση" and "μισθωτής" share the stem "μισθ".
 const deaccent = (s) =>
@@ -33,6 +34,42 @@ function keyTerms(text) {
     if (out.length >= 12) break;
   }
   return out;
+}
+
+// Which concept anchors does this (expanded) query fire? Returns [{code, article}] pairs.
+function firedAnchors(searchText, area) {
+  const hay = deaccent(searchText);
+  const out = [];
+  for (const a of ANCHORS) {
+    if (area === "civil" && a.area === "criminal") continue;
+    if (area === "criminal" && a.area === "civil") continue;
+    if (a.triggers.some((t) => hay.includes(deaccent(t)))) {
+      for (const art of a.articles) out.push({ code: a.code, article: String(art) });
+    }
+  }
+  // dedupe + cap so the source list never floods
+  const seen = new Set();
+  return out
+    .filter((p) => { const k = `${p.code}|${p.article}`; if (seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0, 8);
+}
+
+async function fetchAnchorChunks(pairs) {
+  if (!pairs.length) return [];
+  const codes = pairs.map((p) => p.code);
+  const arts = pairs.map((p) => p.article);
+  const sql = `
+    SELECT DISTINCT ON (c.code_name, c.article) c.code_name, c.area, c.article, c.content
+    FROM chunks c
+    JOIN unnest($1::text[], $2::text[]) AS w(code, art)
+      ON c.code_name = w.code AND c.article = w.art
+    ORDER BY c.code_name, c.article, length(c.content) DESC`;
+  try {
+    return (await pool.query(sql, [codes, arts])).rows;
+  } catch (e) {
+    console.error("anchor fetch failed (skipping anchors):", e?.message);
+    return [];
+  }
 }
 
 export async function retrieveSources(searchText, area, k = Number(process.env.RETRIEVE_K) || 16) {
@@ -94,13 +131,24 @@ export async function retrieveSources(searchText, area, k = Number(process.env.R
   });
   scored.sort((a, b) => b.score - a.score);
 
-  return scored.slice(0, k).map(({ r }) => ({
-    ref: r.article
-      ? `${r.code_name} άρθρο ${r.article}`
-      : r.decision
-      ? r.decision
-      : r.code_name,
-    text: r.content,
-    score: r.score,
-  }));
+  // ── concept anchors: guarantee fundamental institutions (e.g. αδικαιολόγητος πλουτισμός →
+  //    Αστικός Κώδικας 904) appear whenever the query mentions them, even if search ranked them low ──
+  const anchorRows = await fetchAnchorChunks(firedAnchors(searchText, area));
+
+  const out = [];
+  const seenRef = new Set();
+  const push = (ref, text, score) => {
+    if (seenRef.has(ref)) return;
+    seenRef.add(ref);
+    out.push({ ref, text, score });
+  };
+  // anchors first (they are relevant by construction — the query named the institution)
+  for (const r of anchorRows) push(`${r.code_name} άρθρο ${r.article}`, r.content, 1);
+  // then fill the rest with the best hybrid hits, up to k total
+  for (const { r } of scored) {
+    if (out.length >= k) break;
+    const ref = r.article ? `${r.code_name} άρθρο ${r.article}` : r.decision ? r.decision : r.code_name;
+    push(ref, r.content, r.score);
+  }
+  return out;
 }
