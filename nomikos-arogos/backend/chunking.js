@@ -11,28 +11,41 @@
 
 const MAX_CHARS = 2200; // sub-split very long articles to keep embeddings focused
 
-const WS = "[ \\t\\u00A0]"; // space, tab, non-breaking space
-// Group 1: line start. Group 2: article number (e.g. 197, 1226Α).
+// Greek legal PDFs (esp. from the ISOKRATIS database) write headers as "Αρθρο: 197"
+// — accent often dropped, a colon after the word, and embedded mid-stream rather than at
+// a line start. So we match "Άρθρο/Αρθρο/ΑΡΘΡΟ(Ν)" optionally + ":" + number, anywhere,
+// after a delimiter. The capital-only first letter means lowercase cross-references
+// ("...κατά το άρθρο 2...") are NOT treated as headers.
+// Group 1: leading delimiter (offset). Group 2: article number (e.g. 197, 1226Α).
 const ARTICLE_RE = new RegExp(
-  `(^|\\n)${WS}*(?:[ΆΑ]ρθρον?|ΑΡΘΡΟΝ?)\\.?${WS}+(\\d+${WS}?[Α-Ωα-ωA-Za-z]?)`,
+  `(^|[\\s.;·])(?:[ΆΑ]ρθρο[νΝ]?|ΑΡΘΡΟΝ?)\\s*[:.]?\\s*(\\d+\\s?[Α-Ωα-ωA-Za-z]?)(?=[\\s:.,)])`,
   "gu"
 );
 
 function splitLongArticle(article, header) {
   if (article.length <= MAX_CHARS) return [article];
-  const parts = [];
-  const paras = article.split(/\n{2,}/);
+  // First split on paragraph breaks for clean boundaries…
+  const rough = [];
   let buf = "";
-  for (const p of paras) {
+  for (const p of article.split(/\n{2,}/)) {
     if ((buf + "\n\n" + p).length > MAX_CHARS && buf) {
-      parts.push(buf.trim());
-      buf = header + " (συνέχεια)\n" + p; // repeat header so each piece stays self-identifying
+      rough.push(buf.trim());
+      buf = p;
     } else {
       buf = buf ? buf + "\n\n" + p : p;
     }
   }
-  if (buf.trim()) parts.push(buf.trim());
-  return parts;
+  if (buf.trim()) rough.push(buf.trim());
+  // …then HARD-split anything still too long. Flattened PDF text often has no paragraph
+  // breaks, so a single huge article could otherwise blow past the embedding token limit.
+  const parts = [];
+  for (const piece of rough) {
+    if (piece.length <= MAX_CHARS) { parts.push(piece); continue; }
+    const step = MAX_CHARS - 80; // leave room for the "(συνέχεια)" header added below
+    for (let i = 0; i < piece.length; i += step) parts.push(piece.slice(i, i + step));
+  }
+  // Repeat the header on continuation pieces so each stays self-identifying.
+  return parts.map((p, i) => (i === 0 ? p : `${header} (συνέχεια)\n${p}`));
 }
 
 // Returns [{ article, text }] for a code document.

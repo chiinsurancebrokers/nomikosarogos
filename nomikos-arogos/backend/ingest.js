@@ -26,8 +26,13 @@ async function loadSource(src) {
   const lower = ref.toLowerCase();
   if (lower.endsWith(".pdf")) {
     const pdf = await getDocumentProxy(new Uint8Array(buf));
-    const { text } = await extractText(pdf, { mergePages: true });
-    return { text, buf, isPdf: true };
+    // Extract per page (mergePages:false) and join with newlines. unpdf flattens each page
+    // to a single line, so a page that is part of the table of contents becomes one line full
+    // of dotted leaders — which stripTableOfContents() can then drop cleanly. (With
+    // mergePages:true the whole doc is ONE line, and TOC-stripping would delete everything.)
+    const { text } = await extractText(pdf, { mergePages: false });
+    const pages = Array.isArray(text) ? text : [text];
+    return { text: pages.join("\n"), buf, isPdf: true };
   }
   if (lower.endsWith(".docx")) {
     const { value } = await mammoth.extractRawText({ buffer: buf });
@@ -41,6 +46,16 @@ const batch = (a, n) => {
   for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n));
   return o;
 };
+
+// Official codes open with a long table of contents whose lines use dotted leaders
+// ("Άρθρο : 121 ................ 96"). Drop those lines so each article is indexed once
+// (from its body), not twice (body + TOC entry).
+function stripTableOfContents(text) {
+  return text
+    .split("\n")
+    .filter((ln) => !/\.{4,}/.test(ln))
+    .join("\n");
+}
 
 async function ingestOne(src) {
   console.log(`\n→ ${src.code_name} (${src.area})`);
@@ -67,6 +82,7 @@ async function ingestOne(src) {
   // Postgres rejects NUL bytes (0x00); strip them. NFC-normalise so article headers
   // (accents may be decomposed by PDF extraction) match the chunker's pattern.
   text = text.replace(/\u0000/g, "").normalize("NFC");
+  if (src.type !== "decisions") text = stripTableOfContents(text);
 
   const rows = src.type === "decisions" ? chunkDecisions(text) : chunkCode(text);
   console.log(`  ${rows.length} chunks`);
