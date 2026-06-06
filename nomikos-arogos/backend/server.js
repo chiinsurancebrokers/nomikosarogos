@@ -26,6 +26,7 @@ const {
   PORT = 8080,
   CLAUDE_DEEP_MODEL = "claude-opus-4-8",     // best reasoning + 1M context for deep mode
   CLAUDE_QUICK_MODEL = "claude-sonnet-4-6",  // cheaper default for simple questions
+  CLAUDE_EXPAND_MODEL = "claude-sonnet-4-6", // cheap query-expansion step before retrieval
   OPENAI_MODEL = "gpt-4o",                   // verifier; set to whatever current model you prefer
   ALLOWED_ORIGIN = "*",                      // set to your frontend URL in production
 } = process.env;
@@ -43,6 +44,84 @@ app.use(express.json({ limit: "25mb" })); // base64 documents can be large
 // ── 1. RAG retrieval ─────────────────────────────────────────────────────────
 // Implemented in retrieve.js (cosine search over pgvector). Run `npm run ingest`
 // once to populate the index from sources.json before relying on this in production.
+
+// ── 1b. Query expansion ──────────────────────────────────────────────────────
+// Lay questions ("ο ιδιοκτήτης κρατά την εγγύηση") rarely contain the legal terms the
+// relevant articles use ("απόδοση μισθίου", "αδικαιολόγητος πλουτισμός"). We ask a cheap
+// model to translate the question into legal search concepts, then retrieve on that. This
+// closes the everyday-language → legal-concept gap that pure embedding search misses.
+// Best-effort: any failure falls back to the raw query so retrieval never breaks.
+// Few-shot pairs that teach the expander to map everyday situations to the legal concepts
+// (and general remedies) found in the codes. Deliberately NO article numbers — only concepts,
+// so we never teach a wrong citation; the numbers come from retrieval over the real text.
+const EXPAND_FEWSHOT = [
+  {
+    role: "user",
+    content: "Έφυγα από το διαμέρισμα και ο ιδιοκτήτης δεν μου δίνει πίσω την εγγύηση.",
+  },
+  {
+    role: "assistant",
+    content:
+      "μίσθωση, εγγυοδοσία μίσθωσης, επιστροφή εγγύησης, απόδοση μισθίου, λήξη μίσθωσης, " +
+      "υποχρεώσεις εκμισθωτή, φθορά από συνήθη χρήση, αδικαιολόγητος πλουτισμός, αξίωση επιστροφής",
+  },
+  {
+    role: "user",
+    content: "Ο γείτονας έχτισε έναν τοίχο μέσα στο οικόπεδό μου.",
+  },
+  {
+    role: "assistant",
+    content:
+      "κυριότητα ακινήτου, νομή, διατάραξη νομής, προσβολή κυριότητας, αξίωση αποβολής, " +
+      "αρνητική αγωγή, όρια ακινήτων, αυτογνώμονη κατάληψη",
+  },
+  {
+    role: "user",
+    content: "Δάνεισα χρήματα σε φίλο και δεν μου τα επιστρέφει.",
+  },
+  {
+    role: "assistant",
+    content:
+      "δάνειο, ενοχή, εκπλήρωση παροχής, υπερημερία οφειλέτη, τόκοι υπερημερίας, " +
+      "απόδειξη οφειλής, παραγραφή αξίωσης",
+  },
+  {
+    role: "user",
+    content: "Με χτύπησε κάποιος στον δρόμο και τραυματίστηκα.",
+  },
+  {
+    role: "assistant",
+    content:
+      "σωματική βλάβη, επικίνδυνη σωματική βλάβη, πρόκληση τραυματισμού, αδικοπραξία, " +
+      "αποζημίωση, χρηματική ικανοποίηση ηθικής βλάβης, έγκληση",
+  },
+];
+
+async function expandQuery(query, area) {
+  const areaHint =
+    area === "civil" ? "το ελληνικό αστικό δίκαιο"
+    : area === "criminal" ? "το ελληνικό ποινικό δίκαιο"
+    : "το ελληνικό αστικό ή ποινικό δίκαιο";
+  try {
+    const r = await anthropic.messages.create({
+      model: CLAUDE_EXPAND_MODEL,
+      max_tokens: 160,
+      system:
+        `Βοηθός νομικής αναζήτησης για ${areaHint}. Σου δίνεται η ερώτηση ενός πολίτη σε ` +
+        `καθημερινή γλώσσα. Επίστρεψε ΜΟΝΟ μια σύντομη λίστα (χωρισμένη με κόμματα) από τις ` +
+        `νομικές έννοιες και όρους που πρέπει να αναζητηθούν στους Κώδικες για να βρεθούν τα ` +
+        `σωστά άρθρα. Συμπερίλαβε και γενικούς θεσμούς που ίσως εφαρμόζονται (π.χ. ` +
+        `αδικαιολόγητος πλουτισμός, αδικοπραξία, παραγραφή) όταν ταιριάζουν. Χωρίς εξηγήσεις, ` +
+        `χωρίς αριθμούς άρθρων — μόνο όρους. Ακολούθησε το ύφος των παραδειγμάτων.`,
+      messages: [...EXPAND_FEWSHOT, { role: "user", content: query.slice(0, 4000) }],
+    });
+    const terms = (r.content?.[0]?.text || "").trim();
+    return terms ? `${query}\n\nΣχετικές νομικές έννοιες: ${terms}` : query;
+  } catch (e) {
+    console.error("query expansion failed (using raw query):", e?.message);
+    return query;
+  }
+}
 
 // ── 2. System prompt (grounded) ──────────────────────────────────────────────
 function buildSystemPrompt(lang, area, sources) {
@@ -77,6 +156,10 @@ When case (A) applies, structure the answer (translate labels to ${replyLang}):
 
 Remember: Greece is civil-law (rulings guide, not bind). Court decisions are anonymized — never seek or expose party identities. Tell the user to verify articles against the official Code text.
 
+EXAMPLE of case (B) — clarify instead of guessing (do not copy the wording; match the behaviour):
+User: «Θέλω να μάθω για την εγγύηση.»
+Good response: a warm one-line opening, then: «Για να βρω τον σωστό νόμο χρειάζομαι μια διευκρίνιση — εννοείτε την εγγύηση (εγγυοδοσία) σε μίσθωση κατοικίας, την εγγύηση/εγγυητή σε δάνειο, ή την εγγύηση καλής εκτέλεσης σε σύμβαση;» — then stop and wait. (Reason: «εγγύηση» maps to different articles per sense; guessing would cite the wrong law.)
+
 RETRIEVED SOURCES:
 ${sourceBlock}`;
 }
@@ -107,15 +190,35 @@ function buildUserContent({ question, document }) {
   return content;
 }
 
-// ── 4. Claude deep analysis ───────────────────────────────────────────────────
-async function analyzeWithClaude({ question, area, lang, mode, document, sources }) {
+// ── 4. Claude analysis over the full conversation ────────────────────────────
+async function analyzeWithClaude({ history, area, lang, mode, document, sources }) {
   const model = mode === "deep" ? CLAUDE_DEEP_MODEL : CLAUDE_QUICK_MODEL;
+
+  // Map the thread to Anthropic messages (must start with 'user' and alternate).
+  const messages = history.map((m) => ({
+    role: m.role === "assistant" ? "assistant" : "user",
+    content: m.content,
+  }));
+
+  // Attach the uploaded document (read natively) to the latest user turn.
+  if (document && document.data && document.mediaType) {
+    let attached = false;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        messages[i] = { role: "user", content: buildUserContent({ question: messages[i].content, document }) };
+        attached = true;
+        break;
+      }
+    }
+    if (!attached) messages.push({ role: "user", content: buildUserContent({ question: "", document }) });
+  }
+
   const msg = await anthropic.messages.create({
     model,
     max_tokens: mode === "deep" ? 8000 : 4000,
     // Note: Opus 4.7+ rejects temperature/top_p — so we don't set them.
     system: buildSystemPrompt(lang, area, sources),
-    messages: [{ role: "user", content: buildUserContent({ question, document }) }],
+    messages,
   });
   return (msg.content || [])
     .filter((b) => b.type === "text")
@@ -154,13 +257,28 @@ async function verifyWithOpenAI({ analysis, sources, lang }) {
 // ── Endpoint ──────────────────────────────────────────────────────────────────
 app.post("/api/analyze", requireAuth, async (req, res) => {
   try {
-    const { question = "", area = "unsure", lang = "el", mode = "quick", document = null } = req.body || {};
-    if (!question.trim() && !document) {
-      return res.status(400).json({ error: "Provide a question or a document." });
-    }
+    const { messages, question = "", area = "unsure", lang = "el", mode = "quick", document = null } = req.body || {};
 
-    const sources = await retrieveSources(question, area);
-    const analysis = await analyzeWithClaude({ question, area, lang, mode, document, sources });
+    // Accept a full thread; fall back to a single question for backward compatibility.
+    let history = Array.isArray(messages) && messages.length
+      ? messages
+          .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+          .map((m) => ({ role: m.role, content: m.content.slice(0, 8000) })) // cap each turn
+      : question.trim()
+      ? [{ role: "user", content: question.trim() }]
+      : [];
+
+    if (!history.length && !document) {
+      return res.status(400).json({ error: "Provide a message or a document." });
+    }
+    history = history.slice(-12); // keep the last few turns to bound cost/context
+
+    // Retrieve using ALL user turns so follow-ups ("ενοικίου") inherit earlier context.
+    const query = history.filter((m) => m.role === "user").map((m) => m.content).join("\n") || "document";
+    const searchText = await expandQuery(query, area); // lay wording → legal concepts
+    const sources = await retrieveSources(searchText, area);
+
+    const analysis = await analyzeWithClaude({ history, area, lang, mode, document, sources });
 
     // Only run the costly verifier in deep mode (keeps the free tier affordable).
     const verification = mode === "deep" ? await verifyWithOpenAI({ analysis, sources, lang }) : null;

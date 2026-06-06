@@ -33,6 +33,13 @@ export async function initSchema() {
 // Stores 👍/👎 on answers so you can find which questions got weak answers and improve.
 // NOTE: `question` can contain personal data — see the privacy note in the README.
 export async function ensureFeedbackSchema() {
+  // unaccent powers the accent-insensitive lexical leg of hybrid retrieval. Best-effort:
+  // if the role can't create it, retrieval still works (vector-only).
+  try {
+    await pool.query("CREATE EXTENSION IF NOT EXISTS unaccent");
+  } catch (e) {
+    console.error("could not enable unaccent extension (lexical search will be limited):", e?.message);
+  }
   await pool.query(`
     CREATE TABLE IF NOT EXISTS feedback (
       id         BIGSERIAL PRIMARY KEY,
