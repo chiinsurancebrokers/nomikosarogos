@@ -33,6 +33,8 @@ const T = {
     fbQ: "Σας βοήθησε αυτή η απάντηση;", fbYes: "Ναι", fbNo: "Όχι",
     fbThanks: "Ευχαριστούμε για την ανατροφοδότηση.",
     fbCommentPh: "Τι έλειπε ή τι ήταν λάθος; (προαιρετικό)", fbSend: "Αποστολή",
+    chatPlaceholder: "Γράψτε το μήνυμά σας…", send: "Αποστολή", newChat: "Νέα συνομιλία",
+    you: "Εσείς", startHint: "Διαλέξτε τομέα και περιγράψτε το ζήτημά σας — μετά μπορείτε να συνεχίσετε τη συζήτηση.",
     verifyT: "Έλεγχος δεύτερου μοντέλου",
     verdicts: { supported: "Επιβεβαιωμένο από τις πηγές", partially_supported: "Εν μέρει επιβεβαιωμένο", unsupported: "Μη επιβεβαιωμένο — προσοχή", unverified: "Δεν ελέγχθηκε" },
     aidT: "Δωρεάν Νομική Βοήθεια (ν. 3226/2004)",
@@ -66,6 +68,8 @@ const T = {
     fbQ: "Did this answer help you?", fbYes: "Yes", fbNo: "No",
     fbThanks: "Thank you for the feedback.",
     fbCommentPh: "What was missing or wrong? (optional)", fbSend: "Send",
+    chatPlaceholder: "Type your message…", send: "Send", newChat: "New conversation",
+    you: "You", startHint: "Pick an area and describe your situation — then you can keep the conversation going.",
     verifyT: "Second-model check",
     verdicts: { supported: "Supported by sources", partially_supported: "Partially supported", unsupported: "Unsupported — caution", unverified: "Not checked" },
     aidT: "Free Legal Aid (Law 3226/2004)",
@@ -225,59 +229,134 @@ function useIsMobile(breakpoint = 820) {
   return isMobile;
 }
 
-function MainApp({ lang, setLang, onSignOut }) {
+// One assistant reply: formatted answer + sources + verification + disclaimer + feedback.
+function AssistantBubble({ msg, prevUserText, area, mode, lang }) {
   const t = T[lang];
-  const isMobile = useIsMobile();
-  const [area, setArea] = useState("civil");
-  const [situation, setSituation] = useState("");
-  const [mode, setMode] = useState("quick");
-  const [docFile, setDocFile] = useState(null);
-  const [answer, setAnswer] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [showDis, setShowDis] = useState(true);
-  const [fb, setFb] = useState(null);          // null | 'down-open' | 'sent'
+  const [fb, setFb] = useState(null); // null | 'down-open' | 'sent'
   const [fbComment, setFbComment] = useState("");
-  const answerRef = useRef(null);
-
-  useEffect(() => { if (answer && answerRef.current) answerRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); }, [answer]);
+  const verdictColor = (v) => (v === "supported" ? C.ok : v === "partially_supported" ? C.warn : C.alert);
 
   async function sendFeedback(rating, comment) {
     setFb("sent");
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if (!token || !answer) return;
+      if (!token) return;
       await fetch(`${API_URL}/api/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          rating, comment: comment || "", area, mode,
-          question: situation.trim(), answer: answer.analysis, sources: answer.sources,
-        }),
+        body: JSON.stringify({ rating, comment: comment || "", area, mode, question: prevUserText || "", answer: msg.content, sources: msg.sources }),
       });
-    } catch { /* feedback is best-effort; never block the user */ }
+    } catch { /* best-effort */ }
   }
 
-  async function ask() {
-    if ((!situation.trim() && !docFile) || loading) return;
-    setLoading(true); setError(""); setAnswer(null); setFb(null); setFbComment("");
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, overflow: "hidden", animation: "fadeUp .3s ease" }}>
+      <div className="meander" />
+      <div style={{ padding: "18px 22px" }}>
+        {renderAnswer(msg.content)}
+
+        {msg.sources?.length > 0 && (
+          <div style={{ marginTop: 6, marginBottom: 6 }}>
+            <div style={{ fontSize: 12.5, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>{t.sourcesT}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {msg.sources.map((s, i) => <span key={i} style={{ fontSize: 12.5, background: "rgba(47,102,153,.1)", color: C.navy, borderRadius: 14, padding: "4px 10px" }}>{s}</span>)}
+            </div>
+          </div>
+        )}
+
+        {msg.verification && (
+          <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 10, border: `1px solid ${C.line}`, background: "#fff" }}>
+            <div style={{ fontSize: 12.5, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>{t.verifyT}</div>
+            <div style={{ fontWeight: 600, color: verdictColor(msg.verification.verdict) }}>{t.verdicts[msg.verification.verdict] || msg.verification.verdict}</div>
+            {msg.verification.note && <div style={{ fontSize: 13.5, color: C.text, marginTop: 4, lineHeight: 1.5 }}>{msg.verification.note}</div>}
+            {msg.verification.flags?.length > 0 && (
+              <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 13, color: C.alert }}>
+                {msg.verification.flags.map((f, i) => <li key={i}>{f.claim ? `${f.claim}: ` : ""}{f.issue}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {msg.disclaimer && <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.line}`, fontSize: 12.5, color: C.muted, lineHeight: 1.5 }}>{msg.disclaimer}</div>}
+
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
+          {fb === "sent" ? (
+            <div style={{ fontSize: 13.5, color: C.ok }}>✓ {t.fbThanks}</div>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 13.5, color: C.muted }}>{t.fbQ}</span>
+                <button onClick={() => sendFeedback("up")} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 14, color: C.navy }}>👍 {t.fbYes}</button>
+                <button onClick={() => setFb("down-open")} style={{ background: fb === "down-open" ? "rgba(156,59,46,.08)" : "transparent", border: `1px solid ${fb === "down-open" ? C.alert : C.line}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 14, color: C.alert }}>👎 {t.fbNo}</button>
+              </div>
+              {fb === "down-open" && (
+                <div style={{ marginTop: 10 }}>
+                  <textarea value={fbComment} onChange={(e) => setFbComment(e.target.value)} placeholder={t.fbCommentPh} rows={2} style={{ width: "100%", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13.5, color: C.text, resize: "vertical", fontFamily: "'IBM Plex Sans', sans-serif" }} />
+                  <button onClick={() => sendFeedback("down", fbComment)} style={{ marginTop: 8, background: C.ink, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif" }}>{t.fbSend}</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MainApp({ lang, setLang, onSignOut }) {
+  const t = T[lang];
+  const isMobile = useIsMobile();
+  const [area, setArea] = useState("civil");
+  const [input, setInput] = useState("");
+  const [mode, setMode] = useState("quick");
+  const [docFile, setDocFile] = useState(null);
+  const [messages, setMessages] = useState([]); // {role:'user'|'assistant', content, sources?, verification?, disclaimer?}
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [showDis, setShowDis] = useState(true);
+  const endRef = useRef(null);
+
+  useEffect(() => { if (endRef.current) endRef.current.scrollIntoView({ behavior: "smooth", block: "end" }); }, [messages, loading]);
+
+  const started = messages.length > 0;
+
+  async function send() {
+    if ((!input.trim() && !docFile) || loading) return;
+    setError("");
+    const userText = input.trim();
+    const history = [...messages, { role: "user", content: userText || "(επισυναπτόμενο έγγραφο)" }];
+    setMessages(history);
+    setInput("");
+    const sending = docFile;
+    setDocFile(null);
+    setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if (!token) { setError(t.authExpired); setLoading(false); return; }
       let document = null;
-      if (docFile) document = { data: await fileToBase64(docFile), mediaType: docFile.type };
+      if (sending) document = { data: await fileToBase64(sending), mediaType: sending.type };
       const res = await fetch(`${API_URL}/api/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ question: situation.trim(), area, lang, mode, document }),
+        body: JSON.stringify({
+          messages: history.map((m) => ({ role: m.role, content: m.content })),
+          area, lang, mode, document,
+        }),
       });
-      if (res.status === 401) setError(t.authExpired);
-      else if (!res.ok) setError(t.err);
-      else setAnswer(await res.json());
+      if (res.status === 401) { setError(t.authExpired); }
+      else if (!res.ok) { setError(t.err); }
+      else {
+        const data = await res.json();
+        setMessages((prev) => [...prev, { role: "assistant", content: data.analysis, sources: data.sources, verification: data.verification, disclaimer: data.disclaimer }]);
+      }
     } catch { setError(t.err); }
     finally { setLoading(false); }
+  }
+
+  function newChat() {
+    setMessages([]); setInput(""); setDocFile(null); setError("");
   }
 
   const areaCards = [
@@ -285,10 +364,10 @@ function MainApp({ lang, setLang, onSignOut }) {
     { key: "criminal", title: t.criminal, sub: t.criminalSub, icon: "⚖" },
     { key: "unsure", title: t.unsure, sub: t.unsureSub, icon: "?" },
   ];
-  const verdictColor = (v) => v === "supported" ? C.ok : v === "partially_supported" ? C.warn : C.alert;
+  const canSend = (input.trim() || docFile) && !loading;
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, backgroundImage: "radial-gradient(circle at 12% 8%, rgba(176,138,74,0.10), transparent 42%), radial-gradient(circle at 88% 0%, rgba(47,102,153,0.08), transparent 45%)", color: C.text, fontFamily: "'IBM Plex Sans', sans-serif", paddingBottom: 60 }}>
+    <div style={{ minHeight: "100vh", background: C.bg, backgroundImage: "radial-gradient(circle at 12% 8%, rgba(176,138,74,0.10), transparent 42%), radial-gradient(circle at 88% 0%, rgba(47,102,153,0.08), transparent 45%)", color: C.text, fontFamily: "'IBM Plex Sans', sans-serif", paddingBottom: 40 }}>
       {showDis && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(20,35,59,.55)", backdropFilter: "blur(3px)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: C.card, maxWidth: 560, borderRadius: 14, border: `1px solid ${C.line}`, overflow: "hidden", animation: "fadeUp .35s ease" }}>
@@ -303,12 +382,12 @@ function MainApp({ lang, setLang, onSignOut }) {
       )}
 
       <div className="meander" />
-      <header style={{ maxWidth: 1080, margin: "0 auto", padding: "26px 24px 8px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14 }}>
+      <header style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 24px 6px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14 }}>
         <div>
-          <div style={{ fontFamily: "'Spectral', serif", fontSize: 34, fontWeight: 700, color: C.ink, letterSpacing: "-0.5px", lineHeight: 1.05 }}>{t.brand}</div>
-          <div style={{ color: C.muted, marginTop: 4, fontSize: 15 }}>{t.tagline}</div>
+          <div style={{ fontFamily: "'Spectral', serif", fontSize: 30, fontWeight: 700, color: C.ink, letterSpacing: "-0.5px", lineHeight: 1.05 }}>{t.brand}</div>
+          <div style={{ color: C.muted, marginTop: 4, fontSize: 14.5 }}>{t.tagline}</div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span style={{ fontSize: 11.5, letterSpacing: ".5px", textTransform: "uppercase", color: C.bronzeDeep, border: `1px solid ${C.bronze}`, borderRadius: 20, padding: "5px 12px", fontWeight: 600 }}>{t.notLawyer}</span>
           <button onClick={() => setLang(lang === "el" ? "en" : "el")} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 20, padding: "5px 12px", color: C.navy, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>{lang === "el" ? "EN" : "ΕΛ"}</button>
           <button onClick={onSignOut} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 20, padding: "5px 12px", color: C.muted, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>{t.signOut}</button>
@@ -317,115 +396,76 @@ function MainApp({ lang, setLang, onSignOut }) {
 
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: isMobile ? "8px 16px" : "8px 24px", display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0,1fr) 300px", gap: isMobile ? 18 : 26, alignItems: "start" }}>
         <div>
-          <div style={{ fontFamily: "'Spectral', serif", fontWeight: 600, fontSize: 19, color: C.ink, margin: "12px 0" }}>{t.areaQ}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+          {/* Area selector */}
+          <div style={{ fontFamily: "'Spectral', serif", fontWeight: 600, fontSize: 18, color: C.ink, margin: "10px 0 8px" }}>{t.areaQ}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
             {areaCards.map((a) => {
               const active = area === a.key;
               return (
-                <div key={a.key} className="acard" onClick={() => setArea(a.key)} style={{ background: active ? C.ink : C.card, border: `1px solid ${active ? C.ink : C.line}`, borderRadius: 12, padding: "16px 14px", boxShadow: active ? "0 10px 26px rgba(20,35,59,.2)" : "none" }}>
-                  <div style={{ fontFamily: "'Spectral', serif", fontSize: 26, color: C.bronze, lineHeight: 1 }}>{a.icon}</div>
-                  <div style={{ fontWeight: 600, marginTop: 8, fontSize: 15.5, color: active ? "#fff" : C.ink }}>{a.title}</div>
-                  <div style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.4, color: active ? "rgba(255,255,255,.7)" : C.muted }}>{a.sub}</div>
+                <div key={a.key} className="acard" onClick={() => setArea(a.key)} style={{ background: active ? C.ink : C.card, border: `1px solid ${active ? C.ink : C.line}`, borderRadius: 12, padding: "12px 12px", boxShadow: active ? "0 10px 26px rgba(20,35,59,.2)" : "none" }}>
+                  <div style={{ fontFamily: "'Spectral', serif", fontSize: 22, color: C.bronze, lineHeight: 1 }}>{a.icon}</div>
+                  <div style={{ fontWeight: 600, marginTop: 6, fontSize: 14.5, color: active ? "#fff" : C.ink }}>{a.title}</div>
+                  {!isMobile && <div style={{ fontSize: 12, marginTop: 3, lineHeight: 1.4, color: active ? "rgba(255,255,255,.7)" : C.muted }}>{a.sub}</div>}
                 </div>
               );
             })}
           </div>
 
-          <div style={{ fontFamily: "'Spectral', serif", fontWeight: 600, fontSize: 19, color: C.ink, margin: "26px 0 10px" }}>{t.describe}</div>
-          <textarea value={situation} onChange={(e) => setSituation(e.target.value)} placeholder={t.placeholder} rows={5} style={{ width: "100%", background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "14px 16px", fontSize: 15.5, lineHeight: 1.55, color: C.text, resize: "vertical", fontFamily: "'IBM Plex Sans', sans-serif" }} />
-
-          <div style={{ marginTop: 12 }}>
-            <span style={{ fontSize: 12.5, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px" }}>{t.examplesT}:</span>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-              {EXAMPLES[lang][area].map((ex, i) => (
-                <button key={i} className="ex" onClick={() => setSituation(ex)} style={{ background: "transparent", border: `1px dashed ${C.line}`, borderRadius: 18, padding: "7px 13px", fontSize: 13, color: C.navy, cursor: "pointer", textAlign: "left", fontFamily: "'IBM Plex Sans', sans-serif" }}>{ex}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* controls: attach + deep toggle */}
-          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 16, flexWrap: "wrap" }}>
-            <label className="btn" style={{ display: "inline-flex", alignItems: "center", gap: 8, border: `1px solid ${C.line}`, borderRadius: 10, padding: "9px 14px", cursor: "pointer", fontSize: 13.5, color: C.navy, background: C.card }}>
-              📎 {docFile ? docFile.name.slice(0, 22) : t.attach}
-              <input type="file" accept="application/pdf,image/*" style={{ display: "none" }} onChange={(e) => setDocFile(e.target.files?.[0] || null)} />
-            </label>
-            {docFile && <button onClick={() => setDocFile(null)} style={{ background: "transparent", border: "none", color: C.alert, cursor: "pointer", fontSize: 13 }}>{t.remove}</button>}
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13.5, color: C.text }}>
-              <input type="checkbox" checked={mode === "deep"} onChange={(e) => setMode(e.target.checked ? "deep" : "quick")} />
-              <span><strong>{t.deep}</strong> <span style={{ color: C.muted }}>· {t.deepSub}</span></span>
-            </label>
-          </div>
-
-          <button className="btn" onClick={ask} disabled={loading || (!situation.trim() && !docFile)} style={{ marginTop: 18, background: loading || (!situation.trim() && !docFile) ? C.line : C.bronze, color: loading || (!situation.trim() && !docFile) ? C.muted : "#fff", border: "none", borderRadius: 10, padding: "13px 28px", fontSize: 16, fontWeight: 600, cursor: loading || (!situation.trim() && !docFile) ? "default" : "pointer", boxShadow: loading ? "none" : "0 8px 22px rgba(176,138,74,.35)", fontFamily: "'IBM Plex Sans', sans-serif" }}>
-            {loading ? t.asking : "⚖  " + t.ask}
-          </button>
-
-          {(loading || answer || error) && (
-            <div ref={answerRef} style={{ marginTop: 24, background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, overflow: "hidden", animation: "fadeUp .4s ease" }}>
-              <div className="meander" />
-              <div style={{ padding: "22px 26px" }}>
-                <div style={{ fontFamily: "'Spectral', serif", fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 16 }}>{t.answerT}</div>
-                {loading && (
-                  <div style={{ display: "flex", gap: 6, alignItems: "center", color: C.muted }}>
-                    {[0, 1, 2].map((i) => <span key={i} style={{ width: 8, height: 8, borderRadius: 8, background: C.bronze, animation: "pulse 1.1s infinite", animationDelay: i * 0.18 + "s" }} />)}
-                    <span style={{ marginLeft: 8, fontSize: 14 }}>{t.asking}</span>
-                  </div>
-                )}
-                {error && <div style={{ color: C.alert }}>{error}</div>}
-                {answer && (
-                  <>
-                    {renderAnswer(answer.analysis)}
-
-                    {answer.sources?.length > 0 && (
-                      <div style={{ marginTop: 6, marginBottom: 6 }}>
-                        <div style={{ fontSize: 12.5, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>{t.sourcesT}</div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                          {answer.sources.map((s, i) => <span key={i} style={{ fontSize: 12.5, background: "rgba(47,102,153,.1)", color: C.navy, borderRadius: 14, padding: "4px 10px" }}>{s}</span>)}
-                        </div>
-                      </div>
-                    )}
-
-                    {answer.verification && (
-                      <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 10, border: `1px solid ${C.line}`, background: "#fff" }}>
-                        <div style={{ fontSize: 12.5, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>{t.verifyT}</div>
-                        <div style={{ fontWeight: 600, color: verdictColor(answer.verification.verdict) }}>{t.verdicts[answer.verification.verdict] || answer.verification.verdict}</div>
-                        {answer.verification.note && <div style={{ fontSize: 13.5, color: C.text, marginTop: 4, lineHeight: 1.5 }}>{answer.verification.note}</div>}
-                        {answer.verification.flags?.length > 0 && (
-                          <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 13, color: C.alert }}>
-                            {answer.verification.flags.map((f, i) => <li key={i}>{f.claim ? `${f.claim}: ` : ""}{f.issue}</li>)}
-                          </ul>
-                        )}
-                      </div>
-                    )}
-
-                    {answer.disclaimer && <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.line}`, fontSize: 12.5, color: C.muted, lineHeight: 1.5 }}>{answer.disclaimer}</div>}
-
-                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.line}` }}>
-                      {fb === "sent" ? (
-                        <div style={{ fontSize: 13.5, color: C.ok }}>✓ {t.fbThanks}</div>
-                      ) : (
-                        <>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                            <span style={{ fontSize: 13.5, color: C.muted }}>{t.fbQ}</span>
-                            <button onClick={() => sendFeedback("up")} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 14, color: C.navy }}>👍 {t.fbYes}</button>
-                            <button onClick={() => setFb("down-open")} style={{ background: fb === "down-open" ? "rgba(156,59,46,.08)" : "transparent", border: `1px solid ${fb === "down-open" ? C.alert : C.line}`, borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 14, color: C.alert }}>👎 {t.fbNo}</button>
-                          </div>
-                          {fb === "down-open" && (
-                            <div style={{ marginTop: 10 }}>
-                              <textarea value={fbComment} onChange={(e) => setFbComment(e.target.value)} placeholder={t.fbCommentPh} rows={2} style={{ width: "100%", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13.5, color: C.text, resize: "vertical", fontFamily: "'IBM Plex Sans', sans-serif" }} />
-                              <button onClick={() => sendFeedback("down", fbComment)} style={{ marginTop: 8, background: C.ink, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif" }}>{t.fbSend}</button>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-
-                    <button onClick={() => { setAnswer(null); setSituation(""); setDocFile(null); }} style={{ marginTop: 14, background: "transparent", border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 16px", color: C.navy, cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif" }}>↺ {t.again}</button>
-                  </>
-                )}
+          {/* Conversation thread */}
+          <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 12 }}>
+            {!started && (
+              <div style={{ color: C.muted, fontSize: 14.5, lineHeight: 1.6, padding: "8px 2px" }}>{t.startHint}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+                  {EXAMPLES[lang][area].map((ex, i) => (
+                    <button key={i} className="ex" onClick={() => setInput(ex)} style={{ background: "transparent", border: `1px dashed ${C.line}`, borderRadius: 18, padding: "7px 13px", fontSize: 13, color: C.navy, cursor: "pointer", textAlign: "left", fontFamily: "'IBM Plex Sans', sans-serif" }}>{ex}</button>
+                  ))}
+                </div>
               </div>
+            )}
+
+            {messages.map((m, i) =>
+              m.role === "user" ? (
+                <div key={i} style={{ alignSelf: "flex-end", maxWidth: "85%", background: C.ink, color: "#fff", borderRadius: "14px 14px 4px 14px", padding: "10px 14px", fontSize: 15, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.content}</div>
+              ) : (
+                <AssistantBubble key={i} msg={m} prevUserText={messages[i - 1]?.content} area={area} mode={mode} lang={lang} />
+              )
+            )}
+
+            {loading && (
+              <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "16px 22px", display: "flex", gap: 6, alignItems: "center", color: C.muted }}>
+                {[0, 1, 2].map((i) => <span key={i} style={{ width: 8, height: 8, borderRadius: 8, background: C.bronze, animation: "pulse 1.1s infinite", animationDelay: i * 0.18 + "s" }} />)}
+                <span style={{ marginLeft: 8, fontSize: 14 }}>{t.asking}</span>
+              </div>
+            )}
+            {error && <div style={{ color: C.alert, fontSize: 14 }}>{error}</div>}
+            <div ref={endRef} />
+          </div>
+
+          {/* Composer */}
+          <div style={{ marginTop: 14, background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 14px", position: isMobile ? "sticky" : "static", bottom: isMobile ? 8 : "auto" }}>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !isMobile) { e.preventDefault(); send(); } }}
+              placeholder={started ? t.chatPlaceholder : t.placeholder}
+              rows={started ? 2 : 3}
+              style={{ width: "100%", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "10px 12px", fontSize: 15.5, lineHeight: 1.5, color: C.text, resize: "vertical", fontFamily: "'IBM Plex Sans', sans-serif" }}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
+              <label className="btn" style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${C.line}`, borderRadius: 9, padding: "7px 11px", cursor: "pointer", fontSize: 13, color: C.navy, background: "#fff" }}>
+                📎 {docFile ? docFile.name.slice(0, 18) : t.attach}
+                <input type="file" accept="application/pdf,image/*" style={{ display: "none" }} onChange={(e) => setDocFile(e.target.files?.[0] || null)} />
+              </label>
+              {docFile && <button onClick={() => setDocFile(null)} style={{ background: "transparent", border: "none", color: C.alert, cursor: "pointer", fontSize: 13 }}>{t.remove}</button>}
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", fontSize: 13, color: C.text }}>
+                <input type="checkbox" checked={mode === "deep"} onChange={(e) => setMode(e.target.checked ? "deep" : "quick")} />
+                <span><strong>{t.deep}</strong></span>
+              </label>
+              <div style={{ flex: 1 }} />
+              {started && <button onClick={newChat} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 9, padding: "8px 12px", color: C.navy, cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif" }}>↺ {t.newChat}</button>}
+              <button className="btn" onClick={send} disabled={!canSend} style={{ background: canSend ? C.bronze : C.line, color: canSend ? "#fff" : C.muted, border: "none", borderRadius: 9, padding: "9px 20px", fontSize: 15, fontWeight: 600, cursor: canSend ? "pointer" : "default", fontFamily: "'IBM Plex Sans', sans-serif" }}>{t.send}</button>
             </div>
-          )}
+          </div>
         </div>
 
         <aside style={{ display: "flex", flexDirection: "column", gap: 16, position: isMobile ? "static" : "sticky", top: 16 }}>
