@@ -57,6 +57,13 @@ export function normaliseArticleLabel(raw) {
   return m[1] + m[2].replace(/[A-Z]/g, (c) => LATIN_TO_GREEK[c] || c);
 }
 
+// Some Greek government PDFs (e.g. the Ministry's π.δ. consolidations) encode capital delta as
+// U+2206 (INCREMENT) and mu as U+00B5 (MICRO SIGN). They look right but break search and
+// embeddings, so map them to the real Greek letters.
+export function normaliseLegacyGlyphs(text) {
+  return (text || "").replace(/\u2206/g, "Δ").replace(/\u00b5/g, "μ");
+}
+
 // Third-party consolidated PDFs (e.g. LoNinja) carry a diagonal watermark and a header and
 // footer on every page. Drop those lines so "LoNinja.gr" / "Σελίδα 3 από 91" never end up
 // inside an article chunk.

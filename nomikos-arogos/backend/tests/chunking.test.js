@@ -26,3 +26,11 @@ test("watermark, header and page-footer lines are removed, article text is kept"
   assert.ok(!/Ninja|Σελίδα/.test(out));
   assert.ok(out.includes("Άρθρο 361") && out.includes("Εξύβριση") && out.includes("προσβάλλει την τιμή"));
 });
+
+import { normaliseLegacyGlyphs } from "../chunking.js";
+test("legacy glyphs ∆ (U+2206) and µ (U+00B5) become real Greek letters", () => {
+  assert.equal(normaliseLegacyGlyphs("∆ΙΑΤΑΓΜΑ µε"), "ΔΙΑΤΑΓΜΑ με");
+  const rows = chunkCode(normaliseLegacyGlyphs("Άρθρο 67.\nΔεσµοφύλακας\n1. Κείµενο."));
+  assert.equal(rows[0].article, "67");
+  assert.ok(rows[0].text.includes("Δεσμοφύλακας"));
+});
