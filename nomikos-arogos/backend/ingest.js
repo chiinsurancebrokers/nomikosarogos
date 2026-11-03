@@ -123,8 +123,17 @@ async function ingestOne(src) {
 async function main() {
   await initSchema();
   const manifest = JSON.parse(await fs.readFile(new URL("./sources.json", import.meta.url)));
+  // --only "Ποινικός Κώδικας,Κώδικας Ποινικής Δικονομίας" re-indexes just those Codes
+  // (matched by code_name) without editing sources.json.
+  const onlyArg = process.argv.indexOf("--only");
+  const only = onlyArg > -1 ? process.argv[onlyArg + 1].split(",").map((x) => x.trim()) : null;
+  const todo = only ? manifest.filter((s) => only.includes(s.code_name)) : manifest;
+  if (only && todo.length !== only.length) {
+    console.error(`--only matched ${todo.length} of ${only.length} names; check spelling against sources.json`);
+    process.exit(1);
+  }
   let total = 0;
-  for (const src of manifest) {
+  for (const src of todo) {
     try {
       total += await ingestOne(src);
     } catch (e) {
