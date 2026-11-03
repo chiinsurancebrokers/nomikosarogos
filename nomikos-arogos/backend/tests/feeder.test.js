@@ -95,3 +95,13 @@ test("prepareGazetteText rejoins hyphenated words, fixes glyphs and drops the ta
   assert.deepEqual(chunks.map((c) => c.article), ["1", "2"]);
   assert.equal(prepareGazetteText("µ∆"), "μΔ");
 });
+
+import { parseIngestFileArgs } from "../fek.js";
+test("parseIngestFileArgs validates a manual ΦΕΚ ingest command", () => {
+  const ok = parseIngestFileArgs(["--file", "./pdfs/x.pdf", "--fek", "20220100203", "--law", "ν. 4985/2022", "--area", "criminal", "--published", "2022-10-27"]);
+  assert.deepEqual(ok, { file: "./pdfs/x.pdf", fek: "20220100203", law: "ν. 4985/2022", area: "criminal", title: undefined, publishedAt: "2022-10-27" });
+  assert.throws(() => parseIngestFileArgs(["--file", "x.pdf", "--fek", "203", "--law", "ν. 4985/2022", "--area", "criminal"]), /11-digit/);
+  assert.throws(() => parseIngestFileArgs(["--file", "x.pdf", "--fek", "20220100203", "--law", "4985/2022", "--area", "criminal"]), /ν\. 4985/);
+  assert.throws(() => parseIngestFileArgs(["--file", "x.pdf", "--fek", "20220100203", "--law", "ν. 4985/2022", "--area", "tax"]), /civil or criminal/);
+  assert.throws(() => parseIngestFileArgs([]), /--file/);
+});
