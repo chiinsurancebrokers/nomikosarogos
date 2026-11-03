@@ -332,7 +332,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
     res.json({
       analysis,
       verification,
-      sources: sources.map((s) => s.ref), // never echo full source text back wholesale
+      sources: [...new Set(sources.map((s) => s.ref))], // unique labels; never echo full source text back wholesale
       agents: {
         sourceCheck: { kept: sources.length, dropped: checked.dropped },
         currency: currency.notice || currency.current?.length ? { notice: currency.notice, current: currency.current } : null,
