@@ -78,6 +78,22 @@ function capSize(body, header) {
   return parts.map((p, i) => (i === 0 ? p : `${header} (συνέχεια)\n${p}`));
 }
 
+// Prepare the text of a ΦΕΚ (Government Gazette) PDF for chunking:
+//  - legacy lookalike glyphs (∆ U+2206, µ U+00B5) → real Greek letters;
+//  - words broken across lines with a hyphen ("άρ-\nθρου", "λει−\nτούργημα") are rejoined;
+//  - the gazette's table of contents ("Άρθρο 15: Τίτλος …") is dropped, otherwise each TOC
+//    entry would be indexed as if it were an article.
+export function prepareGazetteText(text) {
+  let t = (text || "").replace(/\u0000/g, "").replace(/\u2206/g, "Δ").replace(/\u00b5/g, "μ").normalize("NFC");
+  t = t.replace(/([α-ωά-ώ])[-\u2010\u2212\u00ad]\n[ \t]*([α-ωά-ώ])/gu, "$1$2");
+  const tocEntries = (t.match(/^[ \t]*Άρθρο\s+\d+[Α-Ω]?\s*:/gmu) || []).length;
+  if (tocEntries >= 10) {
+    const body = t.match(/^[ \t]*Άρθρο\s+1[ \t]*$/mu);
+    if (body) t = t.slice(body.index);
+  }
+  return t;
+}
+
 export function chunkStatute(text) {
   const full = (text || "").replace(/\u0000/g, "").normalize("NFC");
   const matches = [...full.matchAll(STATUTE_ARTICLE_RE)];

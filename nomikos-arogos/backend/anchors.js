@@ -17,7 +17,8 @@
 //   }
 // Triggers are matched accent- and case-insensitively, so write them naturally.
 // Codes must be one of: "Αστικός Κώδικας", "Κώδικας Πολιτικής Δικονομίας",
-//   "Ποινικός Κώδικας", "Κώδικας Ποινικής Δικονομίας".
+//   "Ποινικός Κώδικας", "Κώδικας Ποινικής Δικονομίας", or another code_name from sources.json
+//   (e.g. "π.δ. 141/1991").
 //
 // ⚠️  VERIFY THE ARTICLE NUMBERS. The seed numbers below are canonical, stable provisions, but
 //     a wrong number here becomes a wrong citation everywhere. Have a lawyer confirm each entry,
@@ -42,6 +43,9 @@ export const ANCHORS = [
   { institution: "Σωματική βλάβη", triggers: ["σωματικη βλαβη", "τραυματισμος", "ξυλοδαρμος"], code: "Ποινικός Κώδικας", articles: ["308"], area: "criminal" },
   { institution: "Απειλή", triggers: ["απειλη", "απειλες"], code: "Ποινικός Κώδικας", articles: ["333"], area: "criminal" },
   { institution: "Εκβίαση", triggers: ["εκβιαση", "εκβιαστικα"], code: "Ποινικός Κώδικας", articles: ["385"], area: "criminal" },
+
+  // ── Π.Δ. 141/1991 (Αστυνομικά κρατητήρια) — verified against the indexed text (art. 67: δεσμοφύλακας) ──
+  { institution: "Επισκεπτήριο / είσοδος ειδών σε αστυνομικό κρατητήριο", triggers: ["μεταγωγων", "κρατητηριο", "κρατητηρια", "επισκεπτηριο", "δεσμοφυλακας"], code: "π.δ. 141/1991", articles: ["67"], area: "criminal" },
 
   // ── ΚΩΔΙΚΑΣ ΠΟΛΙΤΙΚΗΣ ΔΙΚΟΝΟΜΙΑΣ ──
   { institution: "Διαταγή πληρωμής", triggers: ["διαταγη πληρωμης"], code: "Κώδικας Πολιτικής Δικονομίας", articles: ["623"], area: "civil" },

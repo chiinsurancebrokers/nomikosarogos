@@ -49,3 +49,20 @@ export async function downloadFek(id, { fetchImpl = fetch, timeoutMs = 60000 } =
     return { status: "error", message: e?.message || String(e) };
   }
 }
+
+// CLI: node feeder.js --file ./pdfs/x.pdf --fek 20220100203 --law "ν. 4985/2022" --area criminal
+//        [--title "..."] [--published 2022-10-27]
+// Used to ingest a ΦΕΚ PDF supplied by an administrator (e.g. when the download link is unavailable).
+export function parseIngestFileArgs(argv) {
+  const get = (name) => {
+    const i = argv.indexOf(name);
+    return i > -1 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : undefined;
+  };
+  const o = { file: get("--file"), fek: get("--fek"), law: get("--law"), area: get("--area"), title: get("--title"), publishedAt: get("--published") };
+  if (!o.file) throw new Error("--file <path to ΦΕΚ PDF> is required");
+  if (!parseFekId(o.fek)) throw new Error("--fek must be the 11-digit ΦΕΚ id, e.g. 20220100203 (ΦΕΚ Α' 203/2022)");
+  if (!/^ν\.\s*\d{1,5}\/\d{4}$/u.test(o.law || "")) throw new Error('--law must look like "ν. 4985/2022"');
+  if (!["civil", "criminal"].includes(o.area)) throw new Error("--area must be civil or criminal");
+  if (o.publishedAt && !/^\d{4}-\d{2}-\d{2}$/.test(o.publishedAt)) throw new Error("--published must be YYYY-MM-DD");
+  return o;
+}

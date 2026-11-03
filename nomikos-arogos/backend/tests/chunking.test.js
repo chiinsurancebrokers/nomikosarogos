@@ -35,3 +35,11 @@ test("looksGarbled accepts real Greek and rejects font-scrambled Greek-range tex
   assert.equal(looksGarbled(GOOD.repeat(40)), false);
   assert.equal(looksGarbled(BAD.repeat(40)), true);
 });
+
+import { normaliseLegacyGlyphs } from "../chunking.js";
+test("legacy glyphs ∆ (U+2206) and µ (U+00B5) become real Greek letters", () => {
+  assert.equal(normaliseLegacyGlyphs("∆ΙΑΤΑΓΜΑ µε"), "ΔΙΑΤΑΓΜΑ με");
+  const rows = chunkCode(normaliseLegacyGlyphs("Άρθρο 67.\nΔεσµοφύλακας\n1. Κείµενο."));
+  assert.equal(rows[0].article, "67");
+  assert.ok(rows[0].text.includes("Δεσμοφύλακας"));
+});
