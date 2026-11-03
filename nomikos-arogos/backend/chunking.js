@@ -118,5 +118,23 @@ export function looksGarbled(text) {
   const greek = (sample.match(/[Α-Ωα-ωΆΈΉΊΌΎΏάέήίόύώϊϋ]/g) || []).length;
   const letters = (sample.match(/[A-Za-zΑ-Ωα-ω]/g) || []).length;
   if (letters < 200) return true; // almost no letters extracted
-  return greek / letters < 0.2; // Greek code text should be mostly Greek
+  if (greek / letters < 0.2) return true; // Greek code text should be mostly Greek
+
+  // Word-font mojibake keeps Greek-range letters but scrambles them ("Άρθρο" → "Άξζξν"), so the
+  // letter share looks fine. Real Greek legal text is ~35–45% common function words (και, του,
+  // της, των…); scrambled text is ~2%. Measure on a window from the middle of the document so a
+  // cover page or table of contents doesn't skew it.
+  const mid = (text || "").slice(Math.floor((text || "").length * 0.25), Math.floor((text || "").length * 0.25) + 30000);
+  const toks = stripAccents(mid).match(/[α-ως]+/g) || [];
+  if (toks.length >= 300) {
+    const common = toks.filter((t) => COMMON_WORDS.has(t)).length / toks.length;
+    if (common < 0.12) return true;
+  }
+  return false;
 }
+
+const stripAccents = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const COMMON_WORDS = new Set(
+  ("και του της των το τη την τον τα τις τους να σε με για που ως από στο στη στην στον στα στις στους " +
+    "ο η οι οτι αν ή ειναι δεν θα κατα μετα προς εφοσον οταν μπορει πρεπει αυτο αυτη αυτου αυτης").split(" ")
+);
