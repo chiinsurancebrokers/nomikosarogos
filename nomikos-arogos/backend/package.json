@@ -6,7 +6,9 @@
   "description": "B2C mission-driven AI legal-information backend for Greek law (Claude analysis + OpenAI verifier + pgvector RAG).",
   "scripts": {
     "start": "node server.js",
-    "ingest": "node ingest.js"
+    "ingest": "node ingest.js",
+    "feed": "node feeder.js",
+    "test": "node --test"
   },
   "engines": {
     "node": "22.x"

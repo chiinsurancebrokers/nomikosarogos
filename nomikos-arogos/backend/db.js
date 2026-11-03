@@ -28,6 +28,36 @@ export async function initSchema() {
     "CREATE INDEX IF NOT EXISTS chunks_embedding_idx ON chunks USING hnsw (embedding vector_cosine_ops)"
   );
   await pool.query("CREATE INDEX IF NOT EXISTS chunks_area_idx ON chunks (area)");
+  await ensureFeederSchema();
+}
+
+// Extra columns + tables for the automatic law feeder (feeder.js). Idempotent; the API server
+// also runs this at startup so retrieval can always filter on review_status.
+export async function ensureFeederSchema() {
+  await pool.query(`ALTER TABLE chunks
+    ADD COLUMN IF NOT EXISTS law_ref       TEXT,          -- e.g. 'ν. 5187/2025' (statutes only)
+    ADD COLUMN IF NOT EXISTS fek_id        TEXT,          -- 11-digit ΦΕΚ id the chunk came from
+    ADD COLUMN IF NOT EXISTS published_at  DATE,
+    ADD COLUMN IF NOT EXISTS review_status TEXT           -- NULL/'approved' = searchable, 'pending' = held
+  `);
+  await pool.query("CREATE INDEX IF NOT EXISTS chunks_fek_idx ON chunks (fek_id)");
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS feeder_state (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS feeder_items (
+      fek_id     TEXT PRIMARY KEY,
+      status     TEXT NOT NULL,   -- ingested | pending_review | skipped | garbled | error
+      law_ref    TEXT,
+      area       TEXT,
+      title      TEXT,
+      amends     JSONB,
+      chunks     INTEGER,
+      note       TEXT,
+      updated_at TIMESTAMPTZ DEFAULT now()
+    )`);
 }
 
 // Stores 👍/👎 on answers so you can find which questions got weak answers and improve.
