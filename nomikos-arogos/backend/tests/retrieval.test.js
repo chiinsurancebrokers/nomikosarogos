@@ -50,3 +50,8 @@ test("sourceChecker never drops anchored sources", async () => {
   assert.ok(r.sources.some((s) => s.anchored));
   assert.deepEqual(r.sources.map((s) => s.ref), ["A 1", "A 2", "π.δ. 141/1991 άρθρο 67"]);
 });
+
+test("detention questions also anchor π.δ. 254/2004 art. 3", () => {
+  const f = firedAnchors("Κρατείται στα κρατητήρια, μπορώ να επικοινωνήσω με δικηγόρο;", "criminal");
+  assert.ok(f.some((p) => p.code === "π.δ. 254/2004" && p.article === "3"));
+});

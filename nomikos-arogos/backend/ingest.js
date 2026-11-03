@@ -6,7 +6,7 @@
 // locally, and add a manifest entry with "path" instead of "url".
 
 import fs from "node:fs/promises";
-import { extractText, getDocumentProxy } from "unpdf";
+import { pdfToPages } from "./pdftext.js";
 import mammoth from "mammoth";
 import { chunkCode, chunkDecisions, looksGarbled, stripWatermark, normaliseLegacyGlyphs } from "./chunking.js";
 import { ocrPdf } from "./ocr.js";
@@ -25,13 +25,7 @@ async function loadSource(src) {
   }
   const lower = ref.toLowerCase();
   if (lower.endsWith(".pdf")) {
-    const pdf = await getDocumentProxy(new Uint8Array(buf));
-    // Extract per page (mergePages:false) and join with newlines. unpdf flattens each page
-    // to a single line, so a page that is part of the table of contents becomes one line full
-    // of dotted leaders — which stripTableOfContents() can then drop cleanly. (With
-    // mergePages:true the whole doc is ONE line, and TOC-stripping would delete everything.)
-    const { text } = await extractText(pdf, { mergePages: false });
-    const pages = Array.isArray(text) ? text : [text];
+    const pages = await pdfToPages(buf);
     return { text: pages.join("\n"), buf, isPdf: true };
   }
   if (lower.endsWith(".docx")) {

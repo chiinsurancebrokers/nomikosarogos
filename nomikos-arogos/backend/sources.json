@@ -29,5 +29,11 @@
     "area": "criminal",
     "path": "./pdfs/pd_141_1991.pdf",
     "filter": "κρατητήρ|κρατούμεν|συλληφθ|προσαχθ|επισκεπτήρι|δεσμοφύλακ"
+  },
+  {
+    "type": "code",
+    "code_name": "π.δ. 254/2004",
+    "area": "criminal",
+    "path": "./pdfs/pd_254_2004.pdf"
   }
 ]

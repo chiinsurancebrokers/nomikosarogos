@@ -19,7 +19,7 @@
 //      FEEDER_OCR (default false), FEEDER_WEBHOOK_URL (optional).
 
 import Anthropic from "@anthropic-ai/sdk";
-import { extractText, getDocumentProxy } from "unpdf";
+import { pdfToPages } from "./pdftext.js";
 import { pool, initSchema } from "./db.js";
 import { embed } from "./embeddings.js";
 import { looksGarbled } from "./chunking.js";
@@ -69,9 +69,7 @@ async function record(id, status, extra = {}) {
 }
 
 async function pdfToText(buf) {
-  const pdf = await getDocumentProxy(new Uint8Array(buf));
-  const { text } = await extractText(pdf, { mergePages: false });
-  return (Array.isArray(text) ? text : [text]).join("\n").replace(/\u0000/g, "").normalize("NFC");
+  return (await pdfToPages(buf)).join("\n").replace(/\u0000/g, "").normalize("NFC");
 }
 
 async function storeStatute(id, cls, chunks, forceStatus) {
