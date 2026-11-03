@@ -60,6 +60,37 @@ export function normaliseArticleLabel(raw) {
 // Some Greek government PDFs (e.g. the Ministry's π.δ. consolidations) encode capital delta as
 // U+2206 (INCREMENT) and mu as U+00B5 (MICRO SIGN). They look right but break search and
 // embeddings, so map them to the real Greek letters.
+// Older gazette PDFs (pre-2010 ΦΕΚ) embed Greek in a legacy 8-bit font: the PDF extractor hands us
+// the windows-1253 bytes decoded as Mac Roman ("≈ÀÀ«Õ…" for "ΕΛΛΗΝΙΚΗΣ"). Reverse that mapping.
+// Only applied when it clearly turns the text into Greek, so normal documents are untouched.
+const greekLetters = (t) => (t.match(/[\u0386-\u03ce]/g) || []).length;
+let macToByte = null;
+export function repairLegacyEncoding(text) {
+  const src = text || "";
+  if (greekLetters(src) > src.length * 0.02) return src; // already real Greek
+  if (!macToByte) {
+    macToByte = new Map();
+    const mac = new TextDecoder("macintosh");
+    for (let b = 128; b < 256; b++) macToByte.set(mac.decode(new Uint8Array([b])), b);
+  }
+  const bytes = [];
+  for (const ch of src) {
+    if (ch.charCodeAt(0) < 128) bytes.push(ch.charCodeAt(0));
+    else if (macToByte.has(ch)) bytes.push(macToByte.get(ch));
+    else bytes.push(0x3f);
+  }
+  const fixed = new TextDecoder("windows-1253").decode(new Uint8Array(bytes));
+  if (greekLetters(fixed) <= Math.max(200, src.length * 0.15)) return src;
+  return restoreDroppedKappa(fixed);
+}
+
+// In these old PDFs the capital Κ glyph has no Unicode mapping and vanishes. Restore it only
+// for word starts that cannot begin a Greek word without it (no Greek word starts with "ρατούμεν").
+const DROPPED_KAPPA = /(?<![Α-Ωα-ωά-ώ])(?=(?:ρατούμεν|ρατηθ|ρατήσ|ρατητ|ράτηση|ατά(?![α-ωά-ώ])|άθε(?![α-ωά-ώ])|ώδικ|ανονισμ|υβέρνησ|ατηγορούμεν|ατηγορί|αταγγελ|ατάσχεσ|αταδίκ|αταχρ))/gu;
+export function restoreDroppedKappa(text) {
+  return text.replace(DROPPED_KAPPA, "Κ");
+}
+
 export function normaliseLegacyGlyphs(text) {
   return (text || "").replace(/\u2206/g, "Δ").replace(/\u00b5/g, "μ");
 }
