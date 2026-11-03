@@ -25,7 +25,7 @@ import { embed } from "./embeddings.js";
 import { looksGarbled } from "./chunking.js";
 import { ocrPdf } from "./ocr.js";
 import { fekId, downloadFek, yearsToProbe } from "./fek.js";
-import { looksLikeRelevantLaw, classifyStatute, chunkStatute } from "./statute.js";
+import { looksLikeRelevantLaw, classifyStatute, chunkStatute, isConsolidated, DEFAULT_CONSOLIDATED } from "./statute.js";
 
 const {
   FEEDER_START_NUMBER = "1",
@@ -34,7 +34,12 @@ const {
   FEEDER_OCR = "false",
   FEEDER_WEBHOOK_URL,
   ANTHROPIC_API_KEY,
+  FEEDER_CONSOLIDATED_LAWS,
 } = process.env;
+
+const CONSOLIDATED = FEEDER_CONSOLIDATED_LAWS
+  ? FEEDER_CONSOLIDATED_LAWS.split(",").map((x) => x.trim()).filter(Boolean)
+  : DEFAULT_CONSOLIDATED;
 
 const REQUIRE_REVIEW = FEEDER_REQUIRE_REVIEW === "true";
 const ISSUE_TYPE_A = 1; // ΦΕΚ Α
@@ -110,6 +115,10 @@ async function processIssue(anthropic, id, buf) {
   const cls = await classifyStatute(anthropic, text);
   if (!cls) {
     await record(id, "skipped", { note: "Classifier: not a relevant civil/criminal law." });
+    return { id, status: "skipped" };
+  }
+  if (isConsolidated(cls.lawRef, CONSOLIDATED)) {
+    await record(id, "skipped", { ...cls, note: "Already inside a consolidated Code we index." });
     return { id, status: "skipped" };
   }
   const chunks = chunkStatute(text);

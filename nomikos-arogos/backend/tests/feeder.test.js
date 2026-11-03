@@ -74,3 +74,11 @@ test("chunkStatute does not glue a title letter onto the article number", () => 
   const t = "Άρθρο 1\nΤροποποίηση του άρθρου 110Α του Ποινικού Κώδικα με νέο περιεχόμενο και ορισμούς.\nΆρθρο 5Α\nΝέα διάταξη για την ηλεκτρονική επιτήρηση των καταδίκων και τις προϋποθέσεις της.";
   assert.deepEqual(chunkStatute(t).map((c) => c.article), ["1", "5Α"]);
 });
+
+import { isConsolidated } from "../statute.js";
+test("isConsolidated matches laws already inside the consolidated Codes", () => {
+  assert.equal(isConsolidated("ν. 5344/2026"), true);
+  assert.equal(isConsolidated("5303/2026"), true);
+  assert.equal(isConsolidated("ν. 5187/2025"), false);
+  assert.equal(isConsolidated("ν. 5400/2026", ["5400/2026"]), true);
+});
