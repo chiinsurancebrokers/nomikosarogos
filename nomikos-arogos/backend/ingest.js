@@ -8,7 +8,7 @@
 import fs from "node:fs/promises";
 import { extractText, getDocumentProxy } from "unpdf";
 import mammoth from "mammoth";
-import { chunkCode, chunkDecisions, looksGarbled } from "./chunking.js";
+import { chunkCode, chunkDecisions, looksGarbled, stripWatermark } from "./chunking.js";
 import { ocrPdf } from "./ocr.js";
 import { embed, EMBED_MODEL } from "./embeddings.js";
 import { pool, initSchema } from "./db.js";
@@ -82,7 +82,7 @@ async function ingestOne(src) {
   // Postgres rejects NUL bytes (0x00); strip them. NFC-normalise so article headers
   // (accents may be decomposed by PDF extraction) match the chunker's pattern.
   text = text.replace(/\u0000/g, "").normalize("NFC");
-  if (src.type !== "decisions") text = stripTableOfContents(text);
+  if (src.type !== "decisions") text = stripTableOfContents(stripWatermark(text));
 
   const rows = src.type === "decisions" ? chunkDecisions(text) : chunkCode(text);
   console.log(`  ${rows.length} chunks`);
