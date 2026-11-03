@@ -44,7 +44,7 @@ const T = {
     sourcesDropped: (k, d) => `${k} πηγές κρατήθηκαν · ${d} άσχετες αφαιρέθηκαν`,
     sourcesKept: (k) => `${k} πηγές ελέγχθηκαν`,
     docT: "Τι διάβασα στο έγγραφό σας", docDeadlines: "Προθεσμίες",
-    currencyT: "Πιθανή τροποποίηση νόμου",
+    currencyT: "Πιθανή τροποποίηση νόμου", currentThrough: "Κείμενο ενοποιημένο έως",
   },
   en: {
     brand: "LEGAL COMPANION", name: "Legal Companion", online: "● Online",
@@ -84,7 +84,7 @@ const T = {
     sourcesDropped: (k, d) => `${k} sources kept · ${d} unrelated removed`,
     sourcesKept: (k) => `${k} sources checked`,
     docT: "What I read in your document", docDeadlines: "Deadlines",
-    currencyT: "Law may have been amended",
+    currencyT: "Law may have been amended", currentThrough: "Text consolidated through",
   },
 };
 
@@ -294,6 +294,11 @@ function AssistantBubble({ msg, prevUserText, area, mode, lang }) {
         <div className="src-block">
           <div className="small-title">{t.sourcesT}</div>
           <div className="chips">{msg.sources.map((s, i) => <span key={i} className="chip">{s}</span>)}</div>
+          {agents.currency?.current?.length > 0 && (
+            <div className="current-note">
+              {t.currentThrough}: {agents.currency.current.map((c) => `${c.code} — ${c.through}`).join(" · ")}
+            </div>
+          )}
         </div>
       )}
 
@@ -631,6 +636,7 @@ button{font-family:inherit}
 .verdict.ok{color:var(--good)} .verdict.warn{color:var(--warn)} .verdict.bad{color:var(--bad)}
 .verdict-note{margin-top:4px;font-size:13px}
 .flags{margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--bad)}
+.current-note{margin-top:8px;font-size:11.5px;color:var(--muted);line-height:1.5}
 .disclaimer{margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-size:11.5px;color:var(--muted);line-height:1.5}
 .feedback{margin-top:12px;padding-top:10px;border-top:1px solid var(--border)}
 .fb-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}

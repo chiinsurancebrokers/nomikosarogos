@@ -146,27 +146,51 @@ export async function sourceChecker(anthropic, { query, sources }) {
 }
 
 // ── Currency agent ───────────────────────────────────────────────────────────
+// Codes whose indexed text is a consolidated version with a known date. Update this map
+// whenever a Code is re-indexed from a newer consolidation. Laws passed up to that date are
+// already inside the text, so the agent must not warn about them.
+export const CODE_CURRENT_THROUGH = {
+  "Ποινικός Κώδικας": "ν. 5344/2026 (Οκτώβριος 2026)",
+  "Κώδικας Ποινικής Δικονομίας": "ν. 5303/2026 (Μάιος 2026)",
+};
+
+// Split cited source refs ("Κώδικας Ποινικής Δικονομίας άρθρο 98") into Codes with a known
+// consolidation date and everything else (no known date — the only ones worth a warning).
+export function splitByCurrency(refs) {
+  const known = new Map();
+  const unknown = [];
+  for (const ref of refs) {
+    const code = Object.keys(CODE_CURRENT_THROUGH).find((c) => String(ref).startsWith(c));
+    if (code) known.set(code, CODE_CURRENT_THROUGH[code]);
+    else unknown.push(ref);
+  }
+  return { current: [...known].map(([code, through]) => ({ code, through })), unknown };
+}
+
 export async function currencyAgent(anthropic, { answer, sources, lang }) {
+  const { current, unknown } = splitByCurrency(sources.map((s) => s.ref));
+  if (!unknown.length) return { notice: null, current }; // everything cited is a dated, current Code
   try {
-    const refs = sources.map((s) => s.ref).join("; ");
     const out = await callJson(anthropic, {
       max_tokens: 350,
       system:
-        "You check whether a draft answer about Greek law may be out of date. The database contains ONLY the four Codes " +
+        "You check whether a draft answer about Greek law may be out of date. The database contains the four Codes " +
         "(Αστικός Κώδικας, Κώδικας Πολιτικής Δικονομίας, Ποινικός Κώδικας, Κώδικας Ποινικής Δικονομίας) as ingested, " +
-        "and NOT the separate statutes that amend them. Decide if the cited provisions concern an area that is frequently " +
+        "and NOT always the separate statutes that amend them. The Ποινικός Κώδικας and Κώδικας Ποινικής Δικονομίας " +
+        "are consolidated to October 2026 / May 2026 and are CURRENT: never raise a concern about them. " +
+        "Judge ONLY the provisions listed under CITED PROVISIONS. Decide if they concern an area that is frequently " +
         "changed by later separate laws (e.g. sentence execution, penalties, procedure deadlines, consumer rules). " +
         "If so, write a SHORT hedged notice (max 2 sentences) saying the provisions may have been amended by later laws " +
         "not in the database and the user should check the current consolidated text. You may name up to 2 statutes " +
-        "ONLY if you are highly confident they exist and are relevant, and you must phrase them as 'possibly' — never " +
-        "state what they say. If no concern, set notice to null. " +
+        "ONLY if you are highly confident they exist, were passed recently and are relevant, and you must phrase them " +
+        "as 'possibly' — never state what they say. If no concern, set notice to null. " +
         `Respond with strict JSON: {"notice": string|null} written in ${langName(lang)}.`,
-      content: `CITED PROVISIONS: ${refs}\n\nDRAFT ANSWER:\n${answer.slice(0, 5000)}`,
+      content: `CITED PROVISIONS: ${unknown.join("; ")}\n\nDRAFT ANSWER:\n${answer.slice(0, 5000)}`,
     });
     const notice = out?.notice ? String(out.notice).slice(0, 500) : null;
-    return { notice };
+    return { notice, current };
   } catch (e) {
     console.error("currencyAgent failed:", e?.message);
-    return { notice: null };
+    return { notice: null, current };
   }
 }
