@@ -8,7 +8,7 @@
 import fs from "node:fs/promises";
 import { extractText, getDocumentProxy } from "unpdf";
 import mammoth from "mammoth";
-import { chunkCode, chunkDecisions, looksGarbled, stripWatermark } from "./chunking.js";
+import { chunkCode, chunkDecisions, looksGarbled, stripWatermark, normaliseLegacyGlyphs } from "./chunking.js";
 import { ocrPdf } from "./ocr.js";
 import { embed, EMBED_MODEL } from "./embeddings.js";
 import { pool, initSchema } from "./db.js";
@@ -81,10 +81,21 @@ async function ingestOne(src) {
 
   // Postgres rejects NUL bytes (0x00); strip them. NFC-normalise so article headers
   // (accents may be decomposed by PDF extraction) match the chunker's pattern.
-  text = text.replace(/\u0000/g, "").normalize("NFC");
+  text = normaliseLegacyGlyphs(text.replace(/\u0000/g, "")).normalize("NFC");
   if (src.type !== "decisions") text = stripTableOfContents(stripWatermark(text));
 
-  const rows = src.type === "decisions" ? chunkDecisions(text) : chunkCode(text);
+  let rows = src.type === "decisions" ? chunkDecisions(text) : chunkCode(text);
+
+  // Optional "filter": a regex (case-insensitive). Keep only the ARTICLES where at least one
+  // chunk matches — used for large instruments (e.g. a police regulation) of which only the
+  // citizen-relevant provisions should be searchable. All chunks of a kept article are kept.
+  if (src.filter && src.type !== "decisions") {
+    const re = new RegExp(src.filter, "iu");
+    const keep = new Set(rows.filter((r) => re.test(r.text)).map((r) => r.article));
+    const before = rows.length;
+    rows = rows.filter((r) => keep.has(r.article));
+    console.log(`  filter kept ${keep.size} articles (${rows.length} of ${before} chunks)`);
+  }
   console.log(`  ${rows.length} chunks`);
 
   await pool.query("DELETE FROM chunks WHERE code_name = $1", [src.code_name]); // idempotent

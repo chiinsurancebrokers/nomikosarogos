@@ -22,5 +22,12 @@
     "code_name": "Κώδικας Ποινικής Δικονομίας",
     "area": "criminal",
     "path": "./pdfs/kodikas_poinikis_dikonomias.pdf"
+  },
+  {
+    "type": "code",
+    "code_name": "π.δ. 141/1991",
+    "area": "criminal",
+    "path": "./pdfs/pd_141_1991.pdf",
+    "filter": "κρατητήρ|κρατούμεν|συλληφθ|προσαχθ|επισκεπτήρι|δεσμοφύλακ"
   }
 ]
