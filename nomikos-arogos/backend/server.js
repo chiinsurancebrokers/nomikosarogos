@@ -18,7 +18,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { retrieveSources } from "./retrieve.js";
 import { requireAuth } from "./auth.js";
-import { pool, ensureFeedbackSchema } from "./db.js";
+import { pool, ensureFeedbackSchema, ensureFeederSchema } from "./db.js";
 import {
   documentAgent, docFactsBlock, intakeAgent, intakeReply, sourceChecker, currencyAgent,
 } from "./agents.js";
@@ -145,6 +145,7 @@ Reply ENTIRELY in ${replyLang}, in plain, warm, non-intimidating language.
 
 GROUNDING RULES — follow strictly:
 - Base every legal statement ONLY on the RETRIEVED SOURCES below. Never state an article number, court decision, deadline, or penalty that is not present in the sources. Never invent or guess the law.
+- Sources labelled "ν. NNNN/YYYY" are separate statutes published in the Government Gazette after the Codes were compiled. Their text is NOT consolidated into the Codes: it may amend or override a Code article. When a statute source and a Code article seem to conflict, prefer the statute, name it, and say the Code text may be outdated. Quote statutes only as given in the sources.
 - Decide which of three cases applies before answering:
   (A) The sources clearly contain the provision that answers the question → give the full structured answer, citing each article by its reference (e.g. "Αστικός Κώδικας άρθρο 197").
   (B) The question is too vague or ambiguous to identify the correct provision — e.g. a term with several legal meanings (such as «εγγύηση»: μίσθωσης / δανείου / καλής εκτέλεσης), or missing facts that decide which law applies → DO NOT guess and DO NOT output the structured answer. Instead reply briefly and warmly, explain you need a specific detail to find the exact applicable law, and ask 1–3 concrete clarifying questions. Then stop.
@@ -373,4 +374,5 @@ app.post("/api/feedback", requireAuth, async (req, res) => {
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 ensureFeedbackSchema().catch((e) => console.error("feedback schema init failed:", e?.message));
+ensureFeederSchema().catch((e) => console.error("feeder schema init failed:", e?.message));
 app.listen(PORT, () => console.log(`Νομικός Αρωγός backend listening on :${PORT}`));
