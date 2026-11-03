@@ -123,3 +123,22 @@ retrieval).
 - Default to Sonnet (`quick`); reserve Opus + the OpenAI verifier for the
   "Εκτενής Ανάλυση" (`deep`) toggle only.
 - Cache retrieval results; embed your corpus once, not per request.
+
+## Automatic law feeder (`feeder.js`)
+
+Keeps the database current with new civil/criminal laws published in the Government Gazette (ΦΕΚ Α), which the four Codes in `sources.json` do not include.
+
+**How it works.** Each run probes the next ΦΕΚ Α number after the last processed one (ids are `YYYY` + `01` + 5-digit number, sequential per year); the first miss means nothing newer exists. A new issue is downloaded, pre-filtered, classified by a model (law number, civil/criminal, which Code articles it amends), chunked by article, embedded and stored with `source='statute'` and `code_name='ν. N/YYYY'`. Every issue gets a row in `feeder_items`; nothing is dropped silently. Answers cite these as e.g. "ν. 5187/2025 άρθρο 176", and the prompt tells the model to prefer a statute over an older Code article when they conflict. The statute text is the gazette text, **not** a consolidated Code.
+
+**Run it on a schedule** (Railway: new service from this repo, root `nomikos-arogos/backend`, start command `node feeder.js`, cron `0 */6 * * *`) with the same `DATABASE_URL`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` as the API.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `FEK_URL_TEMPLATE` | `https://www.et.gr/api/DownloadFeksApi/?fek_pdf={id}` | PDF download URL; **verify against et.gr before the first run** |
+| `FEEDER_START_NUMBER` | `1` | First number to try in a year with no saved state — set it near the latest published number to avoid back-filling the whole year |
+| `FEEDER_MAX_PER_RUN` | `25` | Issues processed per run (caps cost; later runs continue) |
+| `FEEDER_REQUIRE_REVIEW` | `false` | `true` holds new statutes (`review_status='pending'`, invisible to search) until approved |
+| `FEEDER_OCR` | `false` | OCR issues whose text layer is garbled |
+| `FEEDER_WEBHOOK_URL` | – | Slack-compatible webhook that receives a summary of new laws and problems |
+
+**Review commands:** `node feeder.js --approve <fekId>` releases a held statute; `node feeder.js --reject <fekId>` deletes it. Run `npm test` for the offline tests.
