@@ -19,6 +19,9 @@ import OpenAI from "openai";
 import { retrieveSources } from "./retrieve.js";
 import { requireAuth } from "./auth.js";
 import { pool, ensureFeedbackSchema } from "./db.js";
+import {
+  documentAgent, docFactsBlock, intakeAgent, intakeReply, sourceChecker, currencyAgent,
+} from "./agents.js";
 
 const {
   ANTHROPIC_API_KEY,
@@ -124,7 +127,7 @@ async function expandQuery(query, area) {
 }
 
 // ── 2. System prompt (grounded) ──────────────────────────────────────────────
-function buildSystemPrompt(lang, area, sources) {
+function buildSystemPrompt(lang, area, sources, docFacts = "") {
   const replyLang = lang === "en" ? "English" : "Greek";
   const areaName =
     area === "civil"
@@ -154,13 +157,19 @@ When case (A) applies, structure the answer (translate labels to ${replyLang}):
 4. When to see a lawyer urgently — flag any deadline / προθεσμία / παραγραφή.
 5. Free help — low-income citizens may get a free lawyer under Law 3226/2004 via their local Bar Association (Δικηγορικός Σύλλογος).
 
+FORMATTING — the answer is rendered as Markdown:
+- Use "## " for section headings and "- " for bullets. Do NOT use horizontal rules (---) or blockquotes (>).
+- Bold only short phrases. Never put a space right after an opening ** or right before a closing **, and never nest or split bold across lines.
+- Keep it concise: short paragraphs, no repetition between sections.
+- Only cite a statute (e.g. a separate law or ΦΕΚ) if it appears in the RETRIEVED SOURCES.
+
 Remember: Greece is civil-law (rulings guide, not bind). Court decisions are anonymized — never seek or expose party identities. Tell the user to verify articles against the official Code text.
 
 EXAMPLE of case (B) — clarify instead of guessing (do not copy the wording; match the behaviour):
 User: «Θέλω να μάθω για την εγγύηση.»
 Good response: a warm one-line opening, then: «Για να βρω τον σωστό νόμο χρειάζομαι μια διευκρίνιση — εννοείτε την εγγύηση (εγγυοδοσία) σε μίσθωση κατοικίας, την εγγύηση/εγγυητή σε δάνειο, ή την εγγύηση καλής εκτέλεσης σε σύμβαση;» — then stop and wait. (Reason: «εγγύηση» maps to different articles per sense; guessing would cite the wrong law.)
 
-RETRIEVED SOURCES:
+${docFacts ? `FACTS EXTRACTED FROM THE USER'S DOCUMENT (by a separate reader; treat as the user's situation, not as law):\n${docFacts}\n\n` : ""}RETRIEVED SOURCES:
 ${sourceBlock}`;
 }
 
@@ -191,7 +200,7 @@ function buildUserContent({ question, document }) {
 }
 
 // ── 4. Claude analysis over the full conversation ────────────────────────────
-async function analyzeWithClaude({ history, area, lang, mode, document, sources }) {
+async function analyzeWithClaude({ history, area, lang, mode, document, sources, docFacts }) {
   const model = mode === "deep" ? CLAUDE_DEEP_MODEL : CLAUDE_QUICK_MODEL;
 
   // Map the thread to Anthropic messages (must start with 'user' and alternate).
@@ -217,7 +226,7 @@ async function analyzeWithClaude({ history, area, lang, mode, document, sources 
     model,
     max_tokens: mode === "deep" ? 8000 : 4000,
     // Note: Opus 4.7+ rejects temperature/top_p — so we don't set them.
-    system: buildSystemPrompt(lang, area, sources),
+    system: buildSystemPrompt(lang, area, sources, docFacts),
     messages,
   });
   return (msg.content || [])
@@ -273,20 +282,57 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
     }
     history = history.slice(-12); // keep the last few turns to bound cost/context
 
+    const hasDocument = !!(document && document.data && document.mediaType);
+
+    // Agent 1/2 (parallel): document analyst reads an attachment; intake agent decides
+    // whether a missing fact must be asked first (skipped when a document is attached).
+    const [docFacts, intake] = await Promise.all([
+      hasDocument ? documentAgent(anthropic, { document, lang }) : Promise.resolve(null),
+      hasDocument ? Promise.resolve({ ask: false }) : intakeAgent(anthropic, { history, area, lang, hasDocument }),
+    ]);
+
+    if (intake.ask) {
+      return res.json({
+        analysis: intakeReply(intake.questions, lang),
+        verification: null,
+        sources: [],
+        agents: { intake: { asked: intake.questions.length } },
+        disclaimer: null,
+      });
+    }
+
     // Retrieve using ALL user turns so follow-ups ("ενοικίου") inherit earlier context.
-    const query = history.filter((m) => m.role === "user").map((m) => m.content).join("\n") || "document";
+    const userText = history.filter((m) => m.role === "user").map((m) => m.content).join("\n");
+    const query = [userText, docFacts?.summary, (docFacts?.searchTerms || []).join(", ")]
+      .filter(Boolean).join("\n") || "document";
     const searchText = await expandQuery(query, area); // lay wording → legal concepts
-    const sources = await retrieveSources(searchText, area);
+    const retrieved = await retrieveSources(searchText, area);
 
-    const analysis = await analyzeWithClaude({ history, area, lang, mode, document, sources });
+    // Agent 3: drop retrieved articles that do not bear on the question.
+    const checked = await sourceChecker(anthropic, { query, sources: retrieved });
+    const sources = checked.sources;
 
-    // Only run the costly verifier in deep mode (keeps the free tier affordable).
-    const verification = mode === "deep" ? await verifyWithOpenAI({ analysis, sources, lang }) : null;
+    const analysis = await analyzeWithClaude({
+      history, area, lang, mode, document, sources, docFacts: docFactsBlock(docFacts),
+    });
+
+    // Agent 4 (always) + verifier (deep mode only, keeps the free tier affordable) in parallel.
+    const [currency, verification] = await Promise.all([
+      currencyAgent(anthropic, { answer: analysis, sources, lang }),
+      mode === "deep" ? verifyWithOpenAI({ analysis, sources, lang }) : Promise.resolve(null),
+    ]);
 
     res.json({
       analysis,
       verification,
       sources: sources.map((s) => s.ref), // never echo full source text back wholesale
+      agents: {
+        sourceCheck: { kept: sources.length, dropped: checked.dropped },
+        currency: currency.notice ? { notice: currency.notice } : null,
+        document: docFacts
+          ? { docType: docFacts.docType, summary: docFacts.summary, keyFacts: docFacts.keyFacts, dates: docFacts.dates, deadlines: docFacts.deadlines }
+          : null,
+      },
       disclaimer:
         lang === "en"
           ? "Information, not legal advice. Verify articles in the official Code and consult a lawyer."
