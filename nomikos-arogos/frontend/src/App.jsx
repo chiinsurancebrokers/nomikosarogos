@@ -1,86 +1,90 @@
 import React, { useState, useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { supabase } from "./supabaseClient";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
-// ── design tokens ─────────────────────────────────────────────────────────────
-const C = {
-  ink: "#14233b", navy: "#1f3a5f", bg: "#f3ede1", card: "#faf6ec",
-  bronze: "#b08a4a", bronzeDeep: "#8a6a34", blue: "#2f6699",
-  text: "#2a2417", muted: "#6b6451", line: "#d9cfb8", alert: "#9c3b2e",
-  ok: "#3f7d4e", warn: "#b07a1e",
-};
-
 const T = {
   el: {
-    brand: "Νομικός Αρωγός", tagline: "Κατανοητή νομική πληροφόρηση για κάθε πολίτη",
+    brand: "ΝΟΜΙΚΟΣ ΑΡΩΓΟΣ", name: "Νομικός Αρωγός", online: "● Σε σύνδεση",
+    eyebrow: "ΝΟΜΙΚΗ ΠΛΗΡΟΦΟΡΗΣΗ, ΜΕ ΤΕΚΜΗΡΙΩΣΗ",
+    headline: ["Γνωρίστε τον Αρωγό.", "Κατανοήστε τα δικαιώματά σας", "πριν αποφασίσετε."],
+    lead: "Περιγράψτε το ζήτημά σας. Ο Αρωγός εντοπίζει τα σχετικά άρθρα των ελληνικών Κωδίκων, ελέγχει τις πηγές του και σας εξηγεί με απλά λόγια — χωρίς να επινοεί νόμους.",
+    trust: ["Απαντήσεις μόνο από τους Κώδικες", "Έλεγχος πηγών και επικαιρότητας", "Δωρεάν νομική βοήθεια όπου δικαιούστε"],
     notLawyer: "Πληροφόρηση — όχι νομική συμβουλή",
     signInTitle: "Σύνδεση", signInSub: "Δώστε το email σας για να λάβετε έναν κωδικό μιας χρήσης.",
     email: "Email", sendCode: "Αποστολή κωδικού", codeLabel: "Κωδικός από το email",
     verify: "Σύνδεση", sending: "Αποστολή…", verifying: "Έλεγχος…",
     codeSent: "Σας στείλαμε έναν κωδικό. Ελέγξτε το email σας.",
     signOut: "Αποσύνδεση", authExpired: "Η συνεδρία έληξε. Συνδεθείτε ξανά.",
-    areaQ: "Σε ποιον τομέα αφορά το ζήτημά σας;",
-    civil: "Αστικό Δίκαιο", civilSub: "Συμβάσεις, οικογένεια, κληρονομιά, ακίνητα",
-    criminal: "Ποινικό Δίκαιο", criminalSub: "Κατηγορίες, μηνύσεις, αδικήματα, ποινές",
-    unsure: "Δεν είμαι σίγουρος/η", unsureSub: "Περιγράψτε το και θα σας προσανατολίσουμε",
-    describe: "Περιγράψτε με απλά λόγια τι συμβαίνει",
-    placeholder: "π.χ. Ο εργοδότης μου δεν μου πληρώνει δεδουλευμένα και δεν απαντά…",
-    deep: "Εκτενής ανάλυση", deepSub: "Πιο βαθιά ανάλυση + δεύτερη γνώμη",
-    attach: "Επισύναψη εγγράφου", remove: "Αφαίρεση",
-    examplesT: "Παραδείγματα", ask: "Ρωτήστε", asking: "Αναζήτηση στους Κώδικες…",
-    answerT: "Καθοδήγηση", sourcesT: "Πηγές", again: "Νέα ερώτηση",
+    civil: "Αστικό Δίκαιο", criminal: "Ποινικό Δίκαιο", unsure: "Δεν είμαι σίγουρος/η",
+    steps: ["1 Περιγραφή", "2 Έλεγχος πηγών", "3 Καθοδήγηση"],
+    placeholder: "Περιγράψτε με απλά λόγια τι συμβαίνει…",
+    chatPlaceholder: "Γράψτε το μήνυμά σας…",
+    deep: "Εκτενής ανάλυση", attach: "Επισύναψη", remove: "Αφαίρεση",
+    send: "Αποστολή", newChat: "Νέα συνομιλία", asking: "Αναζήτηση και έλεγχος πηγών",
+    startHint: "Διαλέξτε τομέα και περιγράψτε το ζήτημά σας — μετά μπορείτε να συνεχίσετε τη συζήτηση.",
+    sourcesT: "Πηγές", verifyT: "Έλεγχος δεύτερου μοντέλου",
+    verdicts: { supported: "Επιβεβαιωμένο από τις πηγές", partially_supported: "Εν μέρει επιβεβαιωμένο", unsupported: "Μη επιβεβαιωμένο — προσοχή", unverified: "Δεν ελέγχθηκε" },
     fbQ: "Σας βοήθησε αυτή η απάντηση;", fbYes: "Ναι", fbNo: "Όχι",
     fbThanks: "Ευχαριστούμε για την ανατροφοδότηση.",
     fbCommentPh: "Τι έλειπε ή τι ήταν λάθος; (προαιρετικό)", fbSend: "Αποστολή",
-    chatPlaceholder: "Γράψτε το μήνυμά σας…", send: "Αποστολή", newChat: "Νέα συνομιλία",
-    you: "Εσείς", startHint: "Διαλέξτε τομέα και περιγράψτε το ζήτημά σας — μετά μπορείτε να συνεχίσετε τη συζήτηση.",
-    verifyT: "Έλεγχος δεύτερου μοντέλου",
-    verdicts: { supported: "Επιβεβαιωμένο από τις πηγές", partially_supported: "Εν μέρει επιβεβαιωμένο", unsupported: "Μη επιβεβαιωμένο — προσοχή", unverified: "Δεν ελέγχθηκε" },
     aidT: "Δωρεάν Νομική Βοήθεια (ν. 3226/2004)",
     aidBody: "Αν έχετε χαμηλό εισόδημα, δικαιούστε δωρεάν δικηγόρο μέσω του Δικηγορικού Συλλόγου της περιοχής σας.",
     aidCta: "Βρείτε τον Δικηγορικό Σύλλογό σας",
-    codesT: "Επίσημοι Κώδικες", courtsT: "Νομολογία",
     deadlineT: "Προσοχή στις προθεσμίες",
     deadlineBody: "Πολλά δικαιώματα χάνονται αν περάσει η προθεσμία. Αν υπάρχει έγγραφο με ημερομηνία, μιλήστε ΑΜΕΣΑ με δικηγόρο.",
+    codesT: "Επίσημοι Κώδικες", courtsT: "Νομολογία",
     disTitle: "Πριν ξεκινήσετε", disOk: "Κατάλαβα, συνέχεια",
     disBody: "Γενική νομική πληροφόρηση βασισμένη στους ελληνικούς Κώδικες. ΔΕΝ είναι δικηγόρος και δεν αντικαθιστά τη νομική συμβουλή. Επαληθεύστε τα άρθρα και απευθυνθείτε σε δικηγόρο. Μην εισάγετε ευαίσθητα προσωπικά δεδομένα.",
     err: "Παρουσιάστηκε σφάλμα. Δοκιμάστε ξανά.",
+    agentIntake: "Διευκρίνιση", agentDoc: "Ανάγνωση εγγράφου", agentSources: "Έλεγχος πηγών",
+    agentCurrency: "Έλεγχος επικαιρότητας",
+    sourcesDropped: (k, d) => `${k} πηγές κρατήθηκαν · ${d} άσχετες αφαιρέθηκαν`,
+    sourcesKept: (k) => `${k} πηγές ελέγχθηκαν`,
+    docT: "Τι διάβασα στο έγγραφό σας", docDeadlines: "Προθεσμίες",
+    currencyT: "Πιθανή τροποποίηση νόμου",
   },
   en: {
-    brand: "Legal Companion", tagline: "Clear legal information for every citizen",
+    brand: "LEGAL COMPANION", name: "Legal Companion", online: "● Online",
+    eyebrow: "LEGAL INFORMATION, WITH EVIDENCE",
+    headline: ["Meet your Companion.", "Understand your rights", "before you decide."],
+    lead: "Describe your situation. The Companion finds the relevant articles in the Greek Codes, checks its own sources and explains them in plain language — without inventing law.",
+    trust: ["Answers only from the Codes", "Source and currency checks", "Free legal aid where you qualify"],
     notLawyer: "Information — not legal advice",
     signInTitle: "Sign in", signInSub: "Enter your email to receive a one-time code.",
     email: "Email", sendCode: "Send code", codeLabel: "Code from your email",
     verify: "Sign in", sending: "Sending…", verifying: "Checking…",
     codeSent: "We sent you a code. Check your email.",
     signOut: "Sign out", authExpired: "Session expired. Please sign in again.",
-    areaQ: "What area does your issue concern?",
-    civil: "Civil Law", civilSub: "Contracts, family, inheritance, property",
-    criminal: "Criminal Law", criminalSub: "Charges, complaints, offences, penalties",
-    unsure: "I'm not sure", unsureSub: "Describe it and we'll orient you",
-    describe: "Describe in plain words what is happening",
-    placeholder: "e.g. My employer won't pay my wages and won't answer…",
-    deep: "Extended analysis", deepSub: "Deeper analysis + second opinion",
-    attach: "Attach document", remove: "Remove",
-    examplesT: "Examples", ask: "Ask", asking: "Searching the Codes…",
-    answerT: "Guidance", sourcesT: "Sources", again: "New question",
+    civil: "Civil Law", criminal: "Criminal Law", unsure: "I'm not sure",
+    steps: ["1 Describe", "2 Check sources", "3 Guidance"],
+    placeholder: "Describe in plain words what is happening…",
+    chatPlaceholder: "Type your message…",
+    deep: "Extended analysis", attach: "Attach", remove: "Remove",
+    send: "Send", newChat: "New conversation", asking: "Searching and checking sources",
+    startHint: "Pick an area and describe your situation — then you can keep the conversation going.",
+    sourcesT: "Sources", verifyT: "Second-model check",
+    verdicts: { supported: "Supported by sources", partially_supported: "Partially supported", unsupported: "Unsupported — caution", unverified: "Not checked" },
     fbQ: "Did this answer help you?", fbYes: "Yes", fbNo: "No",
     fbThanks: "Thank you for the feedback.",
     fbCommentPh: "What was missing or wrong? (optional)", fbSend: "Send",
-    chatPlaceholder: "Type your message…", send: "Send", newChat: "New conversation",
-    you: "You", startHint: "Pick an area and describe your situation — then you can keep the conversation going.",
-    verifyT: "Second-model check",
-    verdicts: { supported: "Supported by sources", partially_supported: "Partially supported", unsupported: "Unsupported — caution", unverified: "Not checked" },
     aidT: "Free Legal Aid (Law 3226/2004)",
     aidBody: "If you are low-income, you are entitled to a free lawyer through your local Bar Association.",
     aidCta: "Find your local Bar Association",
-    codesT: "Official Codes", courtsT: "Case law",
     deadlineT: "Mind the deadlines",
     deadlineBody: "Many rights are lost once a deadline passes. If you hold a dated document, speak to a lawyer IMMEDIATELY.",
+    codesT: "Official Codes", courtsT: "Case law",
     disTitle: "Before you start", disOk: "I understand, continue",
     disBody: "General legal information based on the Greek Codes. NOT a lawyer and no substitute for legal advice. Verify articles and consult a lawyer. Do not enter sensitive personal data.",
     err: "Something went wrong. Please try again.",
+    agentIntake: "Clarifying", agentDoc: "Document read", agentSources: "Source check",
+    agentCurrency: "Currency check",
+    sourcesDropped: (k, d) => `${k} sources kept · ${d} unrelated removed`,
+    sourcesKept: (k) => `${k} sources checked`,
+    docT: "What I read in your document", docDeadlines: "Deadlines",
+    currencyT: "Law may have been amended",
   },
 };
 
@@ -116,36 +120,54 @@ function fileToBase64(file) {
   });
 }
 
-function Section({ heading, children }) {
+// Repairs the most common malformed bold the model produces ("** text **") before rendering.
+function tidyMarkdown(text) {
+  return (text || "").replace(/\*\*[ \t]+([^*\n]+?)[ \t]+\*\*/g, "**$1**");
+}
+
+function Markdown({ children }) {
   return (
-    <div style={{ marginBottom: 18 }}>
-      {heading && (
-        <div style={{ fontFamily: "'Spectral', serif", fontWeight: 600, fontSize: 17, color: C.navy, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ color: C.bronze, fontSize: 13 }}>◆</span>{heading}
-        </div>
-      )}
-      <div style={{ color: C.text, lineHeight: 1.62, fontSize: 15.5, whiteSpace: "pre-wrap" }}>{children}</div>
+    <div className="md">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{ a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}
+      >
+        {tidyMarkdown(children)}
+      </ReactMarkdown>
     </div>
   );
 }
 
-function renderAnswer(text) {
-  const lines = (text || "").split("\n");
-  const blocks = [];
-  let current = { heading: null, body: [] };
-  const headingRe = /^\s*(?:\d+[\).\-]\s*)?([^:]{2,60}):\s*(.*)$/;
-  const push = () => { if (current.heading || current.body.join("").trim()) blocks.push(current); };
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line) { current.body.push(""); continue; }
-    const m = line.match(headingRe);
-    const looksHeading = m && line.length < 70 && !/[.;]$/.test(m[1]) && /[Α-Ωα-ωA-Za-z]/.test(m[1]);
-    if (looksHeading) { push(); current = { heading: m[1].replace(/\*\*/g, "").trim(), body: m[2] ? [m[2]] : [] }; }
-    else current.body.push(raw.replace(/\*\*/g, ""));
-  }
-  push();
-  if (!blocks.length) return <Section>{text}</Section>;
-  return blocks.map((b, i) => <Section key={i} heading={b.heading}>{b.body.join("\n").trim()}</Section>);
+function useIsMobile(breakpoint = 820) {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" && window.matchMedia(`(max-width:${breakpoint}px)`).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width:${breakpoint}px)`);
+    const onChange = () => setIsMobile(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [breakpoint]);
+  return isMobile;
+}
+
+// Shared navy panel (brand, headline, trust points) used on both the sign-in and main screens.
+function LeftPanel({ t, children }) {
+  return (
+    <div className="left-panel">
+      <div className="brand-row">{t.brand}</div>
+      <div className="left-eyebrow">{t.eyebrow}</div>
+      <h1 className="left-headline">
+        {t.headline.map((l, i) => <React.Fragment key={i}>{l}{i < t.headline.length - 1 && <br />}</React.Fragment>)}
+      </h1>
+      <p className="left-lead">{t.lead}</p>
+      <ul className="trust-bullets">
+        {t.trust.map((x) => <li key={x}><i className="bullet-dot" /><span>{x}</span></li>)}
+      </ul>
+      {children}
+    </div>
+  );
 }
 
 // ── Auth screen ───────────────────────────────────────────────────────────────
@@ -175,66 +197,47 @@ function AuthScreen({ lang, setLang }) {
     // success → onAuthStateChange in App sets the session
   }
 
-  const inputStyle = { width: "100%", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 14px", fontSize: 16, color: C.text, fontFamily: "'IBM Plex Sans', sans-serif" };
-
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, background: C.bg }}>
-      <div style={{ background: C.card, maxWidth: 420, width: "100%", borderRadius: 14, border: `1px solid ${C.line}`, overflow: "hidden", boxShadow: "0 18px 50px rgba(20,35,59,.18)" }}>
-        <div className="meander" />
-        <div style={{ padding: "30px 32px 34px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontFamily: "'Spectral', serif", fontSize: 28, fontWeight: 700, color: C.ink }}>{t.brand}</div>
-            <button onClick={() => setLang(lang === "el" ? "en" : "el")} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 18, padding: "4px 10px", color: C.navy, cursor: "pointer", fontWeight: 600, fontSize: 12 }}>{lang === "el" ? "EN" : "ΕΛ"}</button>
+    <div className="split-shell">
+      <LeftPanel t={t} />
+      <div className="right-panel">
+        <div className="chat-card auth-card">
+          <div className="chat-card-header">
+            <div className="hal-dot" />
+            <div className="chat-card-name">{t.name}</div>
+            <div style={{ flex: 1 }} />
+            <button className="ghost-btn" onClick={() => setLang(lang === "el" ? "en" : "el")}>{lang === "el" ? "EN" : "ΕΛ"}</button>
           </div>
-          <div style={{ color: C.muted, fontSize: 14, marginTop: 4, marginBottom: 22 }}>{t.tagline}</div>
-          <div style={{ fontFamily: "'Spectral', serif", fontWeight: 600, fontSize: 20, color: C.navy }}>{t.signInTitle}</div>
-          <div style={{ color: C.muted, fontSize: 14, margin: "6px 0 18px" }}>{t.signInSub}</div>
-
-          <label style={{ fontSize: 13, color: C.muted }}>{t.email}</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" disabled={sent} style={{ ...inputStyle, marginTop: 6, opacity: sent ? 0.6 : 1 }} />
-
-          {!sent ? (
-            <button className="btn" onClick={sendCode} disabled={busy || !email.trim()} style={{ marginTop: 16, width: "100%", background: busy || !email.trim() ? C.line : C.bronze, color: busy || !email.trim() ? C.muted : "#fff", border: "none", borderRadius: 10, padding: "13px", fontSize: 16, fontWeight: 600, cursor: busy ? "default" : "pointer", fontFamily: "'IBM Plex Sans', sans-serif" }}>
-              {busy ? t.sending : t.sendCode}
-            </button>
-          ) : (
-            <>
-              <label style={{ fontSize: 13, color: C.muted, display: "block", marginTop: 16 }}>{t.codeLabel}</label>
-              <input value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" style={{ ...inputStyle, marginTop: 6, letterSpacing: 4, textAlign: "center", fontSize: 22 }} />
-              <button className="btn" onClick={verify} disabled={busy || !code.trim()} style={{ marginTop: 16, width: "100%", background: busy || !code.trim() ? C.line : C.ink, color: busy || !code.trim() ? C.muted : "#fff", border: "none", borderRadius: 10, padding: "13px", fontSize: 16, fontWeight: 600, cursor: busy ? "default" : "pointer", fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                {busy ? t.verifying : t.verify}
-              </button>
-            </>
-          )}
-          {msg && <div style={{ color: C.ok, fontSize: 13.5, marginTop: 12 }}>{msg}</div>}
-          {err && <div style={{ color: C.alert, fontSize: 13.5, marginTop: 12 }}>{err}</div>}
+          <div className="auth-body">
+            <div className="auth-title">{t.signInTitle}</div>
+            <div className="auth-sub">{t.signInSub}</div>
+            <label className="field-label">{t.email}</label>
+            <input className="field" value={email} onChange={(e) => setEmail(e.target.value)} type="email" disabled={sent} />
+            {!sent ? (
+              <button className="primary-btn" onClick={sendCode} disabled={busy || !email.trim()}>{busy ? t.sending : t.sendCode}</button>
+            ) : (
+              <>
+                <label className="field-label" style={{ marginTop: 14 }}>{t.codeLabel}</label>
+                <input className="field code-field" value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" />
+                <button className="primary-btn" onClick={verify} disabled={busy || !code.trim()}>{busy ? t.verifying : t.verify}</button>
+              </>
+            )}
+            {msg && <div className="note ok">{msg}</div>}
+            {err && <div className="note bad">{err}</div>}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Main app ──────────────────────────────────────────────────────────────────
-function useIsMobile(breakpoint = 820) {
-  const [isMobile, setIsMobile] = useState(
-    typeof window !== "undefined" && window.matchMedia(`(max-width:${breakpoint}px)`).matches
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(`(max-width:${breakpoint}px)`);
-    const onChange = () => setIsMobile(mq.matches);
-    onChange();
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, [breakpoint]);
-  return isMobile;
-}
-
-// One assistant reply: formatted answer + sources + verification + disclaimer + feedback.
+// One assistant reply: agent trail + Markdown answer + sources + notices + feedback.
 function AssistantBubble({ msg, prevUserText, area, mode, lang }) {
   const t = T[lang];
   const [fb, setFb] = useState(null); // null | 'down-open' | 'sent'
   const [fbComment, setFbComment] = useState("");
-  const verdictColor = (v) => (v === "supported" ? C.ok : v === "partially_supported" ? C.warn : C.alert);
+  const agents = msg.agents || {};
+  const verdictClass = (v) => (v === "supported" ? "ok" : v === "partially_supported" ? "warn" : "bad");
 
   async function sendFeedback(rating, comment) {
     setFb("sent");
@@ -250,56 +253,79 @@ function AssistantBubble({ msg, prevUserText, area, mode, lang }) {
     } catch { /* best-effort */ }
   }
 
+  const trail = [];
+  if (agents.intake) trail.push(t.agentIntake);
+  if (agents.document) trail.push(t.agentDoc);
+  if (agents.sourceCheck) {
+    trail.push(agents.sourceCheck.dropped > 0
+      ? `${t.agentSources}: ${t.sourcesDropped(agents.sourceCheck.kept, agents.sourceCheck.dropped)}`
+      : `${t.agentSources}: ${t.sourcesKept(agents.sourceCheck.kept)}`);
+  }
+  if ("currency" in agents && !agents.intake) trail.push(t.agentCurrency);
+
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, overflow: "hidden", animation: "fadeUp .3s ease" }}>
-      <div className="meander" />
-      <div style={{ padding: "18px 22px" }}>
-        {renderAnswer(msg.content)}
+    <div className="msg hal">
+      {trail.length > 0 && (
+        <div className="agent-trail">{trail.map((x, i) => <span key={i} className="agent-chip">✓ {x}</span>)}</div>
+      )}
 
-        {msg.sources?.length > 0 && (
-          <div style={{ marginTop: 6, marginBottom: 6 }}>
-            <div style={{ fontSize: 12.5, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>{t.sourcesT}</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {msg.sources.map((s, i) => <span key={i} style={{ fontSize: 12.5, background: "rgba(47,102,153,.1)", color: C.navy, borderRadius: 14, padding: "4px 10px" }}>{s}</span>)}
-            </div>
-          </div>
-        )}
+      {agents.document && (
+        <details className="doc-facts">
+          <summary>📄 {t.docT}{agents.document.docType ? ` — ${agents.document.docType}` : ""}</summary>
+          {agents.document.summary && <p>{agents.document.summary}</p>}
+          {agents.document.keyFacts?.length > 0 && <ul>{agents.document.keyFacts.map((f, i) => <li key={i}>{f}</li>)}</ul>}
+          {agents.document.dates?.length > 0 && <ul>{agents.document.dates.map((d, i) => <li key={i}><b>{d.label}:</b> {d.date}</li>)}</ul>}
+          {agents.document.deadlines?.length > 0 && <div className="doc-deadlines"><b>{t.docDeadlines}:</b> {agents.document.deadlines.join(" · ")}</div>}
+        </details>
+      )}
 
-        {msg.verification && (
-          <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 10, border: `1px solid ${C.line}`, background: "#fff" }}>
-            <div style={{ fontSize: 12.5, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>{t.verifyT}</div>
-            <div style={{ fontWeight: 600, color: verdictColor(msg.verification.verdict) }}>{t.verdicts[msg.verification.verdict] || msg.verification.verdict}</div>
-            {msg.verification.note && <div style={{ fontSize: 13.5, color: C.text, marginTop: 4, lineHeight: 1.5 }}>{msg.verification.note}</div>}
-            {msg.verification.flags?.length > 0 && (
-              <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 13, color: C.alert }}>
-                {msg.verification.flags.map((f, i) => <li key={i}>{f.claim ? `${f.claim}: ` : ""}{f.issue}</li>)}
-              </ul>
-            )}
-          </div>
-        )}
+      <Markdown>{msg.content}</Markdown>
 
-        {msg.disclaimer && <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.line}`, fontSize: 12.5, color: C.muted, lineHeight: 1.5 }}>{msg.disclaimer}</div>}
+      {agents.currency?.notice && (
+        <div className="callout warn"><b>🕒 {t.currencyT}.</b> {agents.currency.notice}</div>
+      )}
 
-        <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
+      {msg.sources?.length > 0 && (
+        <div className="src-block">
+          <div className="small-title">{t.sourcesT}</div>
+          <div className="chips">{msg.sources.map((s, i) => <span key={i} className="chip">{s}</span>)}</div>
+        </div>
+      )}
+
+      {msg.verification && (
+        <div className="callout">
+          <div className="small-title">{t.verifyT}</div>
+          <div className={`verdict ${verdictClass(msg.verification.verdict)}`}>{t.verdicts[msg.verification.verdict] || msg.verification.verdict}</div>
+          {msg.verification.note && <div className="verdict-note">{msg.verification.note}</div>}
+          {msg.verification.flags?.length > 0 && (
+            <ul className="flags">{msg.verification.flags.map((f, i) => <li key={i}>{f.claim ? `${f.claim}: ` : ""}{f.issue}</li>)}</ul>
+          )}
+        </div>
+      )}
+
+      {msg.disclaimer && <div className="disclaimer">{msg.disclaimer}</div>}
+
+      {!agents.intake && (
+        <div className="feedback">
           {fb === "sent" ? (
-            <div style={{ fontSize: 13.5, color: C.ok }}>✓ {t.fbThanks}</div>
+            <div className="note ok">✓ {t.fbThanks}</div>
           ) : (
             <>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 13.5, color: C.muted }}>{t.fbQ}</span>
-                <button onClick={() => sendFeedback("up")} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 14, color: C.navy }}>👍 {t.fbYes}</button>
-                <button onClick={() => setFb("down-open")} style={{ background: fb === "down-open" ? "rgba(156,59,46,.08)" : "transparent", border: `1px solid ${fb === "down-open" ? C.alert : C.line}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 14, color: C.alert }}>👎 {t.fbNo}</button>
+              <div className="fb-row">
+                <span>{t.fbQ}</span>
+                <button className="ghost-btn" onClick={() => sendFeedback("up")}>👍 {t.fbYes}</button>
+                <button className={`ghost-btn ${fb === "down-open" ? "active-bad" : ""}`} onClick={() => setFb("down-open")}>👎 {t.fbNo}</button>
               </div>
               {fb === "down-open" && (
-                <div style={{ marginTop: 10 }}>
-                  <textarea value={fbComment} onChange={(e) => setFbComment(e.target.value)} placeholder={t.fbCommentPh} rows={2} style={{ width: "100%", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13.5, color: C.text, resize: "vertical", fontFamily: "'IBM Plex Sans', sans-serif" }} />
-                  <button onClick={() => sendFeedback("down", fbComment)} style={{ marginTop: 8, background: C.ink, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif" }}>{t.fbSend}</button>
+                <div style={{ marginTop: 8 }}>
+                  <textarea className="field" value={fbComment} onChange={(e) => setFbComment(e.target.value)} placeholder={t.fbCommentPh} rows={2} />
+                  <button className="primary-btn small" onClick={() => sendFeedback("down", fbComment)}>{t.fbSend}</button>
                 </div>
               )}
             </>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -311,15 +337,19 @@ function MainApp({ lang, setLang, onSignOut }) {
   const [input, setInput] = useState("");
   const [mode, setMode] = useState("quick");
   const [docFile, setDocFile] = useState(null);
-  const [messages, setMessages] = useState([]); // {role:'user'|'assistant', content, sources?, verification?, disclaimer?}
+  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showDis, setShowDis] = useState(true);
-  const endRef = useRef(null);
+  const chatRef = useRef(null);
 
-  useEffect(() => { if (endRef.current) endRef.current.scrollIntoView({ behavior: "smooth", block: "end" }); }, [messages, loading]);
+  useEffect(() => {
+    if (chatRef.current) chatRef.current.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, loading]);
 
   const started = messages.length > 0;
+  const last = messages[messages.length - 1];
+  const stage = loading ? 2 : last && last.role === "assistant" && !last.agents?.intake ? 3 : 1;
 
   async function send() {
     if ((!input.trim() && !docFile) || loading) return;
@@ -345,150 +375,140 @@ function MainApp({ lang, setLang, onSignOut }) {
           area, lang, mode, document,
         }),
       });
-      if (res.status === 401) { setError(t.authExpired); }
-      else if (!res.ok) { setError(t.err); }
+      if (res.status === 401) setError(t.authExpired);
+      else if (!res.ok) setError(t.err);
       else {
         const data = await res.json();
-        setMessages((prev) => [...prev, { role: "assistant", content: data.analysis, sources: data.sources, verification: data.verification, disclaimer: data.disclaimer }]);
+        setMessages((prev) => [...prev, {
+          role: "assistant", content: data.analysis, sources: data.sources,
+          verification: data.verification, disclaimer: data.disclaimer, agents: data.agents,
+        }]);
       }
     } catch { setError(t.err); }
     finally { setLoading(false); }
   }
 
-  function newChat() {
-    setMessages([]); setInput(""); setDocFile(null); setError("");
-  }
+  function newChat() { setMessages([]); setInput(""); setDocFile(null); setError(""); }
 
-  const areaCards = [
-    { key: "civil", title: t.civil, sub: t.civilSub, icon: "§" },
-    { key: "criminal", title: t.criminal, sub: t.criminalSub, icon: "⚖" },
-    { key: "unsure", title: t.unsure, sub: t.unsureSub, icon: "?" },
+  const areas = [
+    { key: "civil", label: `§ ${t.civil}` },
+    { key: "criminal", label: `⚖ ${t.criminal}` },
+    { key: "unsure", label: `? ${t.unsure}` },
   ];
   const canSend = (input.trim() || docFile) && !loading;
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, backgroundImage: "radial-gradient(circle at 12% 8%, rgba(176,138,74,0.10), transparent 42%), radial-gradient(circle at 88% 0%, rgba(47,102,153,0.08), transparent 45%)", color: C.text, fontFamily: "'IBM Plex Sans', sans-serif", paddingBottom: 40 }}>
+    <>
       {showDis && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(20,35,59,.55)", backdropFilter: "blur(3px)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div style={{ background: C.card, maxWidth: 560, borderRadius: 14, border: `1px solid ${C.line}`, overflow: "hidden", animation: "fadeUp .35s ease" }}>
-            <div className="meander" />
-            <div style={{ padding: "26px 30px 30px" }}>
-              <div style={{ fontFamily: "'Spectral', serif", fontSize: 24, fontWeight: 700, color: C.ink, marginBottom: 12 }}>{t.disTitle}</div>
-              <p style={{ lineHeight: 1.65, fontSize: 15.5 }}>{t.disBody}</p>
-              <button className="btn" onClick={() => setShowDis(false)} style={{ marginTop: 18, background: C.ink, color: "#fff", border: "none", borderRadius: 9, padding: "12px 22px", fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: "'IBM Plex Sans', sans-serif" }}>{t.disOk}</button>
-            </div>
+        <div className="modal-backdrop open">
+          <div className="modal">
+            <h3>{t.disTitle}</h3>
+            <p>{t.disBody}</p>
+            <div className="modal-actions"><button className="btn-primary" onClick={() => setShowDis(false)}>{t.disOk}</button></div>
           </div>
         </div>
       )}
 
-      <div className="meander" />
-      <header style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 24px 6px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14 }}>
-        <div>
-          <div style={{ fontFamily: "'Spectral', serif", fontSize: 30, fontWeight: 700, color: C.ink, letterSpacing: "-0.5px", lineHeight: 1.05 }}>{t.brand}</div>
-          <div style={{ color: C.muted, marginTop: 4, fontSize: 14.5 }}>{t.tagline}</div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11.5, letterSpacing: ".5px", textTransform: "uppercase", color: C.bronzeDeep, border: `1px solid ${C.bronze}`, borderRadius: 20, padding: "5px 12px", fontWeight: 600 }}>{t.notLawyer}</span>
-          <button onClick={() => setLang(lang === "el" ? "en" : "el")} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 20, padding: "5px 12px", color: C.navy, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>{lang === "el" ? "EN" : "ΕΛ"}</button>
-          <button onClick={onSignOut} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 20, padding: "5px 12px", color: C.muted, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>{t.signOut}</button>
-        </div>
-      </header>
-
-      <main style={{ maxWidth: 1080, margin: "0 auto", padding: isMobile ? "8px 16px" : "8px 24px", display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0,1fr) 300px", gap: isMobile ? 18 : 26, alignItems: "start" }}>
-        <div>
-          {/* Area selector */}
-          <div style={{ fontFamily: "'Spectral', serif", fontWeight: 600, fontSize: 18, color: C.ink, margin: "10px 0 8px" }}>{t.areaQ}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-            {areaCards.map((a) => {
-              const active = area === a.key;
-              return (
-                <div key={a.key} className="acard" onClick={() => setArea(a.key)} style={{ background: active ? C.ink : C.card, border: `1px solid ${active ? C.ink : C.line}`, borderRadius: 12, padding: "12px 12px", boxShadow: active ? "0 10px 26px rgba(20,35,59,.2)" : "none" }}>
-                  <div style={{ fontFamily: "'Spectral', serif", fontSize: 22, color: C.bronze, lineHeight: 1 }}>{a.icon}</div>
-                  <div style={{ fontWeight: 600, marginTop: 6, fontSize: 14.5, color: active ? "#fff" : C.ink }}>{a.title}</div>
-                  {!isMobile && <div style={{ fontSize: 12, marginTop: 3, lineHeight: 1.4, color: active ? "rgba(255,255,255,.7)" : C.muted }}>{a.sub}</div>}
-                </div>
-              );
-            })}
+      <div className="split-shell">
+        <LeftPanel t={t}>
+          <div className="product-toggle">
+            {areas.map((a) => (
+              <button key={a.key} className={`product-btn ${area === a.key ? "active" : ""}`} onClick={() => setArea(a.key)}>{a.label}</button>
+            ))}
           </div>
-
-          {/* Conversation thread */}
-          <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 12 }}>
-            {!started && (
-              <div style={{ color: C.muted, fontSize: 14.5, lineHeight: 1.6, padding: "8px 2px" }}>{t.startHint}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-                  {EXAMPLES[lang][area].map((ex, i) => (
-                    <button key={i} className="ex" onClick={() => setInput(ex)} style={{ background: "transparent", border: `1px dashed ${C.line}`, borderRadius: 18, padding: "7px 13px", fontSize: 13, color: C.navy, cursor: "pointer", textAlign: "left", fontFamily: "'IBM Plex Sans', sans-serif" }}>{ex}</button>
-                  ))}
-                </div>
+          {!isMobile && (
+            <div className="info-stack">
+              <div className="info-card">
+                <div className="info-title">{t.aidT}</div>
+                <div className="info-body">{t.aidBody}</div>
+                <a href="https://e-justice.europa.eu/topics/taking-legal-action/legal-aid/el_en" target="_blank" rel="noreferrer">{t.aidCta} →</a>
               </div>
-            )}
-
-            {messages.map((m, i) =>
-              m.role === "user" ? (
-                <div key={i} style={{ alignSelf: "flex-end", maxWidth: "85%", background: C.ink, color: "#fff", borderRadius: "14px 14px 4px 14px", padding: "10px 14px", fontSize: 15, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.content}</div>
-              ) : (
-                <AssistantBubble key={i} msg={m} prevUserText={messages[i - 1]?.content} area={area} mode={mode} lang={lang} />
-              )
-            )}
-
-            {loading && (
-              <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "16px 22px", display: "flex", gap: 6, alignItems: "center", color: C.muted }}>
-                {[0, 1, 2].map((i) => <span key={i} style={{ width: 8, height: 8, borderRadius: 8, background: C.bronze, animation: "pulse 1.1s infinite", animationDelay: i * 0.18 + "s" }} />)}
-                <span style={{ marginLeft: 8, fontSize: 14 }}>{t.asking}</span>
+              <div className="info-card warn">
+                <div className="info-title">⏳ {t.deadlineT}</div>
+                <div className="info-body">{t.deadlineBody}</div>
               </div>
-            )}
-            {error && <div style={{ color: C.alert, fontSize: 14 }}>{error}</div>}
-            <div ref={endRef} />
-          </div>
+              <div className="link-row">
+                <span>{t.codesT}:</span>
+                {CODES.map(([n, u]) => <a key={n} href={u} target="_blank" rel="noreferrer">{n}</a>)}
+              </div>
+              <div className="link-row">
+                <span>{t.courtsT}:</span>
+                {COURTS.map(([n, u]) => <a key={n} href={u} target="_blank" rel="noreferrer">{n}</a>)}
+              </div>
+            </div>
+          )}
+        </LeftPanel>
 
-          {/* Composer */}
-          <div style={{ marginTop: 14, background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 14px", position: isMobile ? "sticky" : "static", bottom: isMobile ? 8 : "auto" }}>
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !isMobile) { e.preventDefault(); send(); } }}
-              placeholder={started ? t.chatPlaceholder : t.placeholder}
-              rows={started ? 2 : 3}
-              style={{ width: "100%", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "10px 12px", fontSize: 15.5, lineHeight: 1.5, color: C.text, resize: "vertical", fontFamily: "'IBM Plex Sans', sans-serif" }}
-            />
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
-              <label className="btn" style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${C.line}`, borderRadius: 9, padding: "7px 11px", cursor: "pointer", fontSize: 13, color: C.navy, background: "#fff" }}>
-                📎 {docFile ? docFile.name.slice(0, 18) : t.attach}
-                <input type="file" accept="application/pdf,image/*" style={{ display: "none" }} onChange={(e) => setDocFile(e.target.files?.[0] || null)} />
-              </label>
-              {docFile && <button onClick={() => setDocFile(null)} style={{ background: "transparent", border: "none", color: C.alert, cursor: "pointer", fontSize: 13 }}>{t.remove}</button>}
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", fontSize: 13, color: C.text }}>
-                <input type="checkbox" checked={mode === "deep"} onChange={(e) => setMode(e.target.checked ? "deep" : "quick")} />
-                <span><strong>{t.deep}</strong></span>
-              </label>
+        <div className="right-panel">
+          <div className="chat-card">
+            <div className="chat-card-header">
+              <div className="hal-dot" />
+              <div className="chat-card-name">{t.name} <span className="online-badge">{t.online}</span></div>
               <div style={{ flex: 1 }} />
-              {started && <button onClick={newChat} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 9, padding: "8px 12px", color: C.navy, cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif" }}>↺ {t.newChat}</button>}
-              <button className="btn" onClick={send} disabled={!canSend} style={{ background: canSend ? C.bronze : C.line, color: canSend ? "#fff" : C.muted, border: "none", borderRadius: 9, padding: "9px 20px", fontSize: 15, fontWeight: 600, cursor: canSend ? "pointer" : "default", fontFamily: "'IBM Plex Sans', sans-serif" }}>{t.send}</button>
+              <button className="ghost-btn" onClick={() => setLang(lang === "el" ? "en" : "el")}>{lang === "el" ? "EN" : "ΕΛ"}</button>
+              {started && <button className="ghost-btn" onClick={newChat}>↺ {t.newChat}</button>}
+              <button className="ghost-btn" onClick={onSignOut}>{t.signOut}</button>
+            </div>
+            <div className="progress-bar">
+              {t.steps.map((s, i) => (
+                <div key={s} className={`progress-step ${stage === i + 1 ? "active" : stage > i + 1 ? "done" : ""}`}>{s}</div>
+              ))}
+            </div>
+
+            <div id="chat" ref={chatRef}>
+              {!started && (
+                <div className="start-hint">
+                  {t.startHint}
+                  <div className="guided-choices">
+                    {EXAMPLES[lang][area].map((ex, i) => (
+                      <button key={i} className="guided-choice" onClick={() => setInput(ex)}>{ex}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {messages.map((m, i) =>
+                m.role === "user" ? (
+                  <div key={i} className="msg user">{m.content}</div>
+                ) : (
+                  <AssistantBubble key={i} msg={m} prevUserText={messages[i - 1]?.content} area={area} mode={mode} lang={lang} />
+                )
+              )}
+              {loading && (
+                <div className="thinking">
+                  <span className="thinking-dots"><span /><span /><span /></span>
+                  <span>{t.asking}</span>
+                </div>
+              )}
+              {error && <div className="note bad">{error}</div>}
+            </div>
+
+            <div className="dynamic-input-row">
+              {docFile && (
+                <div className="file-pill">📎 {docFile.name.slice(0, 32)} <button onClick={() => setDocFile(null)}>{t.remove}</button></div>
+              )}
+              <div className="composer">
+                <label className="icon-btn" title={t.attach}>
+                  📎
+                  <input type="file" accept="application/pdf,image/*" style={{ display: "none" }} onChange={(e) => setDocFile(e.target.files?.[0] || null)} />
+                </label>
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !isMobile) { e.preventDefault(); send(); } }}
+                  placeholder={started ? t.chatPlaceholder : t.placeholder}
+                  rows={1}
+                />
+                <button className="send-btn" onClick={send} disabled={!canSend}>{t.send}</button>
+              </div>
+              <label className="deep-toggle">
+                <input type="checkbox" checked={mode === "deep"} onChange={(e) => setMode(e.target.checked ? "deep" : "quick")} />
+                <span>{t.deep}</span>
+              </label>
             </div>
           </div>
         </div>
-
-        <aside style={{ display: "flex", flexDirection: "column", gap: 16, position: isMobile ? "static" : "sticky", top: 16 }}>
-          <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "16px 18px" }}>
-            <div style={{ fontWeight: 600, color: C.navy, marginBottom: 6, fontSize: 15 }}>{t.aidT}</div>
-            <div style={{ fontSize: 13.5, lineHeight: 1.55 }}>{t.aidBody}</div>
-            <a className="lk" href="https://e-justice.europa.eu/topics/taking-legal-action/legal-aid/el_en" target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 8, fontSize: 13.5, fontWeight: 600 }}>{t.aidCta} →</a>
-          </div>
-          <div style={{ background: "rgba(156,59,46,.06)", border: `1px solid rgba(156,59,46,.3)`, borderRadius: 12, padding: "16px 18px" }}>
-            <div style={{ fontWeight: 600, color: C.alert, marginBottom: 6, fontSize: 15 }}>⏳ {t.deadlineT}</div>
-            <div style={{ fontSize: 13.5, lineHeight: 1.55 }}>{t.deadlineBody}</div>
-          </div>
-          <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "16px 18px" }}>
-            <div style={{ fontWeight: 600, color: C.navy, marginBottom: 10, fontSize: 15 }}>{t.codesT}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>{CODES.map(([n, u]) => <a key={n} className="lk" href={u} target="_blank" rel="noreferrer" style={{ fontSize: 13.5 }}>{n}</a>)}</div>
-          </div>
-          <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "16px 18px" }}>
-            <div style={{ fontWeight: 600, color: C.navy, marginBottom: 10, fontSize: 15 }}>{t.courtsT}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>{COURTS.map(([n, u]) => <a key={n} className="lk" href={u} target="_blank" rel="noreferrer" style={{ fontSize: 13.5 }}>{n}</a>)}</div>
-          </div>
-        </aside>
-      </main>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -503,34 +523,153 @@ export default function App() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  const styles = (
-    <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
-      * { box-sizing: border-box; }
-      html, body, #root { margin: 0; padding: 0; }
-      ::selection { background: ${C.bronze}; color: #fff; }
-      @keyframes fadeUp { from { opacity: 0; transform: translateY(14px);} to { opacity:1; transform:none; } }
-      @keyframes pulse { 0%,100%{ opacity:.35 } 50%{ opacity:1 } }
-      @keyframes dash { to { background-position: 24px 0; } }
-      .meander { height: 6px; background-image: repeating-linear-gradient(90deg, ${C.bronze} 0 4px, transparent 4px 12px); background-size: 24px 6px; animation: dash 18s linear infinite; opacity:.55; }
-      .acard { transition: transform .18s ease, box-shadow .18s ease; cursor: pointer; }
-      .acard:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(20,35,59,.14); }
-      .btn { transition: transform .12s ease; }
-      .btn:hover { transform: translateY(-2px); }
-      .lk { color: ${C.blue}; text-decoration: none; border-bottom: 1px solid rgba(47,102,153,.3); }
-      .ex:hover { background: rgba(176,138,74,.12); }
-      textarea:focus, input:focus { outline: none; border-color: ${C.bronze} !important; box-shadow: 0 0 0 3px rgba(176,138,74,.15); }
-    `}</style>
-  );
-
-  if (!ready) return <>{styles}<div style={{ minHeight: "100vh", background: C.bg }} /></>;
-
   return (
     <>
-      {styles}
-      {session
-        ? <MainApp lang={lang} setLang={setLang} onSignOut={() => supabase.auth.signOut()} />
+      <style>{CSS}</style>
+      {!ready ? <div style={{ minHeight: "100vh", background: "#0c1727" }} />
+        : session ? <MainApp lang={lang} setLang={setLang} onSignOut={() => supabase.auth.signOut()} />
         : <AuthScreen lang={lang} setLang={setLang} />}
     </>
   );
 }
+
+// ── Styles (HAL layout: navy left panel + white chat card on a light panel) ──
+const CSS = `
+:root{
+  --navy:#0c1727; --navy-2:#172333; --white:#fff; --bg:#f5f7f9;
+  --border:#e7ebef; --text:#172333; --muted:#687586;
+  --accent:#5747e8; --accent-soft:#f3f0ff; --good:#1a7a4c; --gold:#c99a4a;
+  --bad:#b4321f; --warn:#a15c00; --warn-soft:#fff6e5;
+}
+*{box-sizing:border-box}
+html,body,#root{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
+button{font-family:inherit}
+
+.split-shell{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);min-height:100vh;background:var(--navy)}
+.left-panel{padding:56px 48px;display:flex;flex-direction:column;justify-content:center;color:var(--white)}
+.brand-row{font-weight:700;letter-spacing:.08em;font-size:12px;color:#9aa7bd;margin-bottom:22px}
+.left-eyebrow{color:var(--gold);font-weight:700;font-size:11px;letter-spacing:.12em;margin-bottom:14px}
+.left-headline{font-size:34px;line-height:1.12;overflow-wrap:anywhere;font-weight:800;margin:0 0 18px;letter-spacing:-.01em}
+.left-lead{font-size:14px;line-height:1.6;color:#c3cbdb;max-width:460px;margin:0 0 24px}
+.product-toggle{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.product-btn{padding:10px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;font-size:13px;font-weight:600}
+.product-btn.active{background:var(--accent);border-color:var(--accent)}
+.trust-bullets{list-style:none;padding:0;margin:0 0 26px;display:flex;flex-direction:column;gap:10px}
+.trust-bullets li{font-size:13px;color:#dfe4ee;display:flex;align-items:center;gap:10px}
+.bullet-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);display:inline-block;flex-shrink:0}
+.info-stack{display:flex;flex-direction:column;gap:12px;max-width:460px}
+.info-card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px 16px}
+.info-card.warn{border-color:rgba(201,154,74,.5)}
+.info-title{font-weight:700;font-size:13px;color:#fff;margin-bottom:4px}
+.info-body{font-size:12.5px;line-height:1.55;color:#c3cbdb}
+.info-card a,.link-row a{color:#cfc8ff;font-size:12.5px;font-weight:600;text-decoration:none}
+.info-card a{display:inline-block;margin-top:6px}
+.info-card a:hover,.link-row a:hover{text-decoration:underline}
+.link-row{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:#9aa7bd}
+
+.right-panel{min-width:0;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:32px}
+.chat-card{background:var(--white);border-radius:16px;box-shadow:0 20px 50px rgba(12,23,39,.18);width:100%;max-width:600px;height:calc(100vh - 64px);max-height:860px;display:flex;flex-direction:column;overflow:hidden}
+.chat-card.auth-card{height:auto}
+.chat-card-header{display:flex;align-items:center;gap:8px;padding:14px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.hal-dot{width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#3a3160,var(--navy));flex-shrink:0}
+.chat-card-name{font-weight:700;font-size:14px}
+.online-badge{color:var(--good);font-weight:400;font-size:11px;margin-left:4px}
+.ghost-btn{background:none;border:1px solid var(--border);border-radius:999px;padding:6px 12px;font-size:11px;cursor:pointer;color:var(--muted)}
+.ghost-btn:hover{border-color:var(--accent);color:var(--accent)}
+.ghost-btn.active-bad{border-color:var(--bad);color:var(--bad)}
+.progress-bar{display:flex;gap:6px;padding:8px 18px;background:var(--white);border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)}
+.progress-step{flex:1;text-align:center;padding-bottom:6px;border-bottom:3px solid var(--border)}
+.progress-step.active{color:var(--navy);font-weight:700;border-color:var(--accent)}
+.progress-step.done{color:var(--good);border-color:var(--good)}
+
+#chat{flex:1;overflow-y:auto;padding:16px 18px;min-height:0}
+.start-hint{color:var(--muted);font-size:14px;line-height:1.6}
+.guided-choices{display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-top:12px}
+.guided-choice{background:var(--accent-soft);color:var(--accent);border:none;border-radius:14px;padding:8px 13px;font-size:12.5px;font-weight:600;cursor:pointer;text-align:left}
+.guided-choice:hover{filter:brightness(.96)}
+.msg{max-width:90%;min-width:0;margin:10px 0;padding:12px 14px;border-radius:14px;font-size:14px;line-height:1.55;overflow-wrap:anywhere}
+.msg.user{background:var(--navy);color:var(--white);margin-left:auto;border-bottom-right-radius:4px;white-space:pre-wrap}
+.msg.hal{background:var(--white);border:1px solid var(--border);margin-right:auto;border-bottom-left-radius:4px;max-width:100%}
+.thinking{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;padding:8px 0}
+.thinking-dots span{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--muted);margin-left:2px;animation:pulse 1.2s infinite}
+.thinking-dots span:nth-child(2){animation-delay:.2s}
+.thinking-dots span:nth-child(3){animation-delay:.4s}
+@keyframes pulse{0%,100%{opacity:.2}50%{opacity:1}}
+
+.md h1,.md h2,.md h3{font-size:14.5px;font-weight:700;margin:14px 0 6px;color:var(--navy)}
+.md h1:first-child,.md h2:first-child,.md h3:first-child{margin-top:0}
+.md p{margin:6px 0}
+.md ul,.md ol{margin:6px 0;padding-left:20px}
+.md li{margin:3px 0}
+.md hr{border:0;border-top:1px solid var(--border);margin:12px 0}
+.md blockquote{margin:8px 0;padding:6px 12px;border-left:3px solid var(--border);color:var(--muted)}
+.md strong{font-weight:700}
+.md a{color:var(--accent)}
+.md table{border-collapse:collapse;font-size:13px;margin:8px 0}
+.md th,.md td{border:1px solid var(--border);padding:5px 8px;text-align:left}
+
+.agent-trail{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+.agent-chip{background:#eaf7ef;color:var(--good);border-radius:999px;padding:3px 9px;font-size:10.5px;font-weight:700}
+.doc-facts{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:12.5px}
+.doc-facts summary{cursor:pointer;font-weight:700;color:var(--navy)}
+.doc-facts ul{margin:6px 0;padding-left:18px}
+.doc-facts p{margin:6px 0}
+.doc-deadlines{margin-top:6px;color:var(--bad)}
+.callout{margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);font-size:13px;line-height:1.5}
+.callout.warn{background:var(--warn-soft);border-color:#f0d9a8;color:#5c3b00}
+.small-title{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.src-block{margin-top:14px;padding-top:10px;border-top:1px solid var(--border)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px}
+.verdict{font-weight:700}
+.verdict.ok{color:var(--good)} .verdict.warn{color:var(--warn)} .verdict.bad{color:var(--bad)}
+.verdict-note{margin-top:4px;font-size:13px}
+.flags{margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--bad)}
+.disclaimer{margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-size:11.5px;color:var(--muted);line-height:1.5}
+.feedback{margin-top:12px;padding-top:10px;border-top:1px solid var(--border)}
+.fb-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.note{font-size:13px;margin-top:10px}
+.note.ok{color:var(--good)} .note.bad{color:var(--bad)}
+
+.dynamic-input-row{border-top:1px solid var(--border);padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.composer{display:flex;gap:8px;align-items:flex-end}
+.composer textarea{flex:1;border:1px solid var(--border);border-radius:18px;padding:11px 16px;font-size:14px;line-height:1.4;resize:none;max-height:140px;min-height:42px;font-family:inherit;color:var(--text)}
+.composer textarea:focus,.field:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(87,71,232,.12)}
+.send-btn{background:var(--navy);color:var(--white);border:none;border-radius:999px;padding:0 20px;height:42px;font-weight:700;cursor:pointer}
+.send-btn:disabled{background:var(--border);color:var(--muted);cursor:default}
+.icon-btn{background:var(--bg);border:1px solid var(--border);border-radius:999px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:16px}
+.icon-btn:hover{background:var(--accent-soft);border-color:var(--accent)}
+.deep-toggle{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);cursor:pointer}
+.file-pill{font-size:12px;background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:5px 12px;align-self:flex-start}
+.file-pill button{background:none;border:none;color:var(--bad);cursor:pointer;font-size:12px;margin-left:6px}
+
+.auth-body{padding:22px 22px 26px}
+.auth-title{font-size:20px;font-weight:800}
+.auth-sub{color:var(--muted);font-size:13.5px;margin:6px 0 16px}
+.field-label{display:block;font-size:12px;font-weight:700;margin-bottom:4px}
+.field{width:100%;padding:11px 13px;border:1px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit}
+.code-field{letter-spacing:4px;text-align:center;font-size:20px}
+.primary-btn{display:block;width:100%;margin-top:16px;background:var(--accent);color:var(--white);border:none;border-radius:10px;padding:12px;font-weight:700;font-size:14px;cursor:pointer}
+.primary-btn.small{width:auto;padding:8px 16px;margin-top:8px;font-size:13px;background:var(--navy)}
+.primary-btn:disabled{background:var(--border);color:var(--muted);cursor:default}
+
+.modal-backdrop{position:fixed;inset:0;background:rgba(12,23,39,.5);display:none;align-items:center;justify-content:center;z-index:100;padding:16px}
+.modal-backdrop.open{display:flex}
+.modal{background:var(--white);border-radius:16px;padding:22px;max-width:520px;width:100%;max-height:85vh;overflow:auto}
+.modal h3{margin-top:0}
+.modal p{font-size:14px;line-height:1.6}
+.modal-actions{display:flex;gap:8px;margin-top:16px}
+.btn-primary{flex:1;padding:11px;border-radius:9px;font-weight:700;cursor:pointer;border:none;background:var(--navy);color:var(--white)}
+
+@media(max-width:820px){
+  .split-shell{grid-template-columns:minmax(0,1fr);min-height:auto}
+  .left-panel{padding:28px 20px 8px;min-width:0}
+  .left-headline{font-size:24px}
+  .left-lead{margin-bottom:16px}
+  .trust-bullets{display:none}
+  .right-panel{padding:12px}
+  .chat-card{height:calc(100vh - 24px);max-height:none}
+  .chat-card.auth-card{height:auto}
+}
+`;

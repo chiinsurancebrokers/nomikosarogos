@@ -78,7 +78,8 @@ export async function retrieveSources(searchText, area, k = Number(process.env.R
   const [qvec] = await embed(searchText);
   const vecLiteral = `[${qvec.join(",")}]`;
   const useFilter = area === "civil" || area === "criminal" || area === "admin";
-  const areaClause = useFilter ? "WHERE area = $3" : "";
+  const REVIEW_OK = "(review_status IS NULL OR review_status = 'approved')"; // hide held statutes
+  const areaClause = useFilter ? `WHERE area = $3 AND ${REVIEW_OK}` : `WHERE ${REVIEW_OK}`;
 
   // ── semantic leg: vector nearest neighbours (a generous candidate pool) ──
   const poolN = Math.max(k * 3, 48);
@@ -99,7 +100,7 @@ export async function retrieveSources(searchText, area, k = Number(process.env.R
     const lexSql = `
       SELECT code_name, area, article, decision, content, 1 - (embedding <=> $1) AS vscore
       FROM chunks
-      WHERE ${useFilter ? "area = $3 AND " : ""}unaccent(lower(content)) LIKE ANY($${pIdx})
+      WHERE ${useFilter ? "area = $3 AND " : ""}${REVIEW_OK} AND unaccent(lower(content)) LIKE ANY($${pIdx})
       ORDER BY embedding <=> $1
       LIMIT $2`;
     const lexParams = useFilter
