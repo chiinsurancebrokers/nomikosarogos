@@ -82,3 +82,16 @@ test("isConsolidated matches laws already inside the consolidated Codes", () => 
   assert.equal(isConsolidated("ν. 5187/2025"), false);
   assert.equal(isConsolidated("ν. 5400/2026", ["5400/2026"]), true);
 });
+
+import { prepareGazetteText } from "../statute.js";
+test("prepareGazetteText rejoins hyphenated words, fixes glyphs and drops the table of contents", () => {
+  const toc = Array.from({ length: 12 }, (_, i) => `Άρθρο ${i + 1}: Τίτλος ${i + 1}`).join("\n");
+  const raw = `${toc}\n∆ΙΑΤΑΞΕΙΣ\nΆρθρο 1\nΣκοπός\nΣτο άρ-\nθρο 5 του ν. 2776/1999 και τη λει−\nτουργία.\nΆρθρο 2\nΑντικείμενο`;
+  const out = prepareGazetteText(raw);
+  assert.ok(!out.includes("Τίτλος 3"), "TOC entries removed");
+  assert.ok(out.startsWith("Άρθρο 1\nΣκοπός"), "body starts at the first real article");
+  assert.ok(out.includes("άρθρο 5") && out.includes("λειτουργία"), "hyphens rejoined");
+  const chunks = chunkStatute(out + "\n" + "κείμενο ".repeat(10));
+  assert.deepEqual(chunks.map((c) => c.article), ["1", "2"]);
+  assert.equal(prepareGazetteText("µ∆"), "μΔ");
+});

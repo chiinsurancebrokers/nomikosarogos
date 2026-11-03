@@ -25,7 +25,7 @@ import { embed } from "./embeddings.js";
 import { looksGarbled } from "./chunking.js";
 import { ocrPdf } from "./ocr.js";
 import { fekId, downloadFek, yearsToProbe } from "./fek.js";
-import { looksLikeRelevantLaw, classifyStatute, chunkStatute, isConsolidated, DEFAULT_CONSOLIDATED } from "./statute.js";
+import { looksLikeRelevantLaw, classifyStatute, chunkStatute, prepareGazetteText, isConsolidated, DEFAULT_CONSOLIDATED } from "./statute.js";
 
 const {
   FEEDER_START_NUMBER = "1",
@@ -108,6 +108,7 @@ async function processIssue(anthropic, id, buf) {
       return { id, status: "garbled" };
     }
   }
+  text = prepareGazetteText(text); // rejoin hyphenated words, drop the gazette's table of contents
   if (!looksLikeRelevantLaw(text)) {
     await record(id, "skipped", { note: "Not a civil/criminal law (pre-filter)." });
     return { id, status: "skipped" };
