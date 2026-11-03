@@ -8,7 +8,7 @@
 import fs from "node:fs/promises";
 import { extractText, getDocumentProxy } from "unpdf";
 import mammoth from "mammoth";
-import { chunkCode, chunkDecisions, looksGarbled } from "./chunking.js";
+import { chunkCode, chunkDecisions, looksGarbled, stripWatermark } from "./chunking.js";
 import { ocrPdf } from "./ocr.js";
 import { embed, EMBED_MODEL } from "./embeddings.js";
 import { pool, initSchema } from "./db.js";
@@ -82,7 +82,7 @@ async function ingestOne(src) {
   // Postgres rejects NUL bytes (0x00); strip them. NFC-normalise so article headers
   // (accents may be decomposed by PDF extraction) match the chunker's pattern.
   text = text.replace(/\u0000/g, "").normalize("NFC");
-  if (src.type !== "decisions") text = stripTableOfContents(text);
+  if (src.type !== "decisions") text = stripTableOfContents(stripWatermark(text));
 
   const rows = src.type === "decisions" ? chunkDecisions(text) : chunkCode(text);
   console.log(`  ${rows.length} chunks`);
@@ -123,8 +123,17 @@ async function ingestOne(src) {
 async function main() {
   await initSchema();
   const manifest = JSON.parse(await fs.readFile(new URL("./sources.json", import.meta.url)));
+  // --only "Ποινικός Κώδικας,Κώδικας Ποινικής Δικονομίας" re-indexes just those Codes
+  // (matched by code_name) without editing sources.json.
+  const onlyArg = process.argv.indexOf("--only");
+  const only = onlyArg > -1 ? process.argv[onlyArg + 1].split(",").map((x) => x.trim()) : null;
+  const todo = only ? manifest.filter((s) => only.includes(s.code_name)) : manifest;
+  if (only && todo.length !== only.length) {
+    console.error(`--only matched ${todo.length} of ${only.length} names; check spelling against sources.json`);
+    process.exit(1);
+  }
   let total = 0;
-  for (const src of manifest) {
+  for (const src of todo) {
     try {
       total += await ingestOne(src);
     } catch (e) {

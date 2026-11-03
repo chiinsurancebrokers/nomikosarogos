@@ -122,7 +122,12 @@ function fileToBase64(file) {
 
 // Repairs the most common malformed bold the model produces ("** text **") before rendering.
 function tidyMarkdown(text) {
-  return (text || "").replace(/\*\*[ \t]+([^*\n]+?)[ \t]+\*\*/g, "**$1**");
+  // Pair `**` markers left to right and trim only the inside of each pair, so
+  // `** x **` becomes `**x**` while the text between two bold spans is untouched.
+  return (text || "").replace(/\*\*([^*\n]+?)\*\*/g, (m, inner) => {
+    const t = inner.trim();
+    return t ? `**${t}**` : m;
+  });
 }
 
 function Markdown({ children }) {

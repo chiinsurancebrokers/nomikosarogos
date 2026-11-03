@@ -18,7 +18,7 @@ const MAX_CHARS = 2200; // sub-split very long articles to keep embeddings focus
 // ("...κατά το άρθρο 2...") are NOT treated as headers.
 // Group 1: leading delimiter (offset). Group 2: article number (e.g. 197, 1226Α).
 const ARTICLE_RE = new RegExp(
-  `(^|[\\s.;·])(?:[ΆΑ]ρθρο[νΝ]?|ΑΡΘΡΟΝ?)\\s*[:.]?\\s*(\\d+\\s?[Α-Ωα-ωA-Za-z]?)(?=[\\s:.,)])`,
+  `(^|[\\s.;·])(?:[ΆΑ]ρθρο[νΝ]?|ΑΡΘΡΟΝ?)\\s*[:.]?\\s*(\\d+(?:[ \\u00a0]?[Α-Ωα-ωA-Za-z])?)(?=[\\s:.,)])`,
   "gu"
 );
 
@@ -48,6 +48,25 @@ function splitLongArticle(article, header) {
   return parts.map((p, i) => (i === 0 ? p : `${header} (συνέχεια)\n${p}`));
 }
 
+// Latin capitals that look identical to Greek ones; PDFs mix them in letter suffixes
+// ("110A" vs "110Α"), which would otherwise give one article two different labels.
+const LATIN_TO_GREEK = { A: "Α", B: "Β", E: "Ε", H: "Η", I: "Ι", K: "Κ", M: "Μ", N: "Ν", O: "Ο", P: "Ρ", T: "Τ", X: "Χ", Y: "Υ", Z: "Ζ" };
+export function normaliseArticleLabel(raw) {
+  const m = String(raw).replace(/\s/g, "").match(/^(\d+)(.*)$/);
+  if (!m) return String(raw).trim();
+  return m[1] + m[2].replace(/[A-Z]/g, (c) => LATIN_TO_GREEK[c] || c);
+}
+
+// Third-party consolidated PDFs (e.g. LoNinja) carry a diagonal watermark and a header and
+// footer on every page. Drop those lines so "LoNinja.gr" / "Σελίδα 3 από 91" never end up
+// inside an article chunk.
+export function stripWatermark(text) {
+  return (text || "")
+    .split("\n")
+    .filter((ln) => !/o?Ninja\.gr/i.test(ln) && !/^\s*Σελίδα\s+\d+\s+από\s+\d+\s*$/u.test(ln))
+    .join("\n");
+}
+
 // Returns [{ article, text }] for a code document.
 export function chunkCode(fullText) {
   fullText = (fullText || "").normalize("NFC");
@@ -65,7 +84,7 @@ export function chunkCode(fullText) {
     const start = matches[i].index + (matches[i][1] ? matches[i][1].length : 0);
     const end = i + 1 < matches.length ? matches[i + 1].index : fullText.length;
     const body = fullText.slice(start, end).trim();
-    const article = matches[i][2].replace(/\s/g, ""); // e.g. "1226Α"
+    const article = normaliseArticleLabel(matches[i][2]); // e.g. "1226Α"
     const header = `Άρθρο ${article}`;
     for (const piece of splitLongArticle(body, header)) {
       chunks.push({ article, text: piece });
