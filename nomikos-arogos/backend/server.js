@@ -329,7 +329,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
       sources: sources.map((s) => s.ref), // never echo full source text back wholesale
       agents: {
         sourceCheck: { kept: sources.length, dropped: checked.dropped },
-        currency: currency.notice ? { notice: currency.notice } : null,
+        currency: currency.notice || currency.current?.length ? { notice: currency.notice, current: currency.current } : null,
         document: docFacts
           ? { docType: docFacts.docType, summary: docFacts.summary, keyFacts: docFacts.keyFacts, dates: docFacts.dates, deadlines: docFacts.deadlines }
           : null,
