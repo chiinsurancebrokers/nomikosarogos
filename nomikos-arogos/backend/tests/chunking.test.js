@@ -27,6 +27,15 @@ test("watermark, header and page-footer lines are removed, article text is kept"
   assert.ok(out.includes("Άρθρο 361") && out.includes("Εξύβριση") && out.includes("προσβάλλει την τιμή"));
 });
 
+import { looksGarbled } from "../chunking.js";
+const GOOD = "Ο κρατούμενος έχει δικαίωμα επικοινωνίας με ένα τουλάχιστον τρίτο πρόσωπο που ο ίδιος υποδείξει, χωρίς αδικαιολόγητη καθυστέρηση. Αν ο κατηγορούμενος στερείται την ελευθερία του, οι αρχές υποχρεούνται να εξετάσουν το αίτημα και να ενημερώσουν τον ίδιο για τα δικαιώματά του. ";
+// Real mojibake from a Word-exported Penitentiary Code PDF: Greek-range letters, wrong glyphs.
+const BAD = "Νη θαλφλεο εθηέιεζεο δηθαζηηθώλ απνθάζεσλ θαη έθηηζεο πνηλώλ θαη κέηξσλ αζθαιείαο θαηά ηεο ειεπζεξίαο. Θξαηνχκελνη ζεσξνχληαη άηνκα πνπ εθηίνπλ πνηλέο θαηά ηεο ειεπζεξίαο, νη ππφδηθνη θαη φζνη θξαηνχληαη θαηά ην άξζξν 15 ηνπ παξφληνο θαζψο θαη νη ππφ απέιαζε δηακέλνληεο αιινδαπνί ζηα θαηαζηήκαηα θξάηεζεο. ";
+test("looksGarbled accepts real Greek and rejects font-scrambled Greek-range text", () => {
+  assert.equal(looksGarbled(GOOD.repeat(40)), false);
+  assert.equal(looksGarbled(BAD.repeat(40)), true);
+});
+
 import { normaliseLegacyGlyphs } from "../chunking.js";
 test("legacy glyphs ∆ (U+2206) and µ (U+00B5) become real Greek letters", () => {
   assert.equal(normaliseLegacyGlyphs("∆ΙΑΤΑΓΜΑ µε"), "ΔΙΑΤΑΓΜΑ με");
