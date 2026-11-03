@@ -24,8 +24,9 @@ import { pool, initSchema } from "./db.js";
 import { embed } from "./embeddings.js";
 import { looksGarbled } from "./chunking.js";
 import { ocrPdf } from "./ocr.js";
-import { fekId, downloadFek, yearsToProbe } from "./fek.js";
-import { looksLikeRelevantLaw, classifyStatute, chunkStatute, isConsolidated, DEFAULT_CONSOLIDATED } from "./statute.js";
+import fs from "node:fs/promises";
+import { fekId, downloadFek, yearsToProbe, isPdf, parseIngestFileArgs } from "./fek.js";
+import { looksLikeRelevantLaw, classifyStatute, chunkStatute, prepareGazetteText, isConsolidated, DEFAULT_CONSOLIDATED } from "./statute.js";
 
 const {
   FEEDER_START_NUMBER = "1",
@@ -73,12 +74,12 @@ async function pdfToText(buf) {
   return (Array.isArray(text) ? text : [text]).join("\n").replace(/\u0000/g, "").normalize("NFC");
 }
 
-async function storeStatute(id, cls, chunks) {
+async function storeStatute(id, cls, chunks, forceStatus) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query("DELETE FROM chunks WHERE fek_id = $1", [id]); // idempotent re-runs
-    const reviewStatus = REQUIRE_REVIEW ? "pending" : "approved";
+    const reviewStatus = forceStatus || (REQUIRE_REVIEW ? "pending" : "approved");
     for (const group of batch(chunks, 64)) {
       const vectors = await embed(group.map((c) => `${cls.lawRef} ${c.article ? "άρθρο " + c.article : ""}\n${c.text}`));
       for (let i = 0; i < group.length; i++) {
@@ -108,6 +109,7 @@ async function processIssue(anthropic, id, buf) {
       return { id, status: "garbled" };
     }
   }
+  text = prepareGazetteText(text); // rejoin hyphenated words, drop the gazette's table of contents
   if (!looksLikeRelevantLaw(text)) {
     await record(id, "skipped", { note: "Not a civil/criminal law (pre-filter)." });
     return { id, status: "skipped" };
@@ -197,6 +199,27 @@ async function run() {
   console.log(`feeder done: ${processed} issue(s) checked, ${added.length} added, ${results.length - added.length} skipped/failed.`);
 }
 
+// Manual ingest of a ΦΕΚ PDF supplied by an administrator. The admin vouches for the law number
+// and area, so the classifier and the review gate are skipped (the text is still checked for
+// garbling and cleaned like automatically downloaded issues).
+async function ingestFile(opts) {
+  const buf = await fs.readFile(opts.file);
+  if (!isPdf(buf)) throw new Error(`${opts.file} is not a PDF`);
+  await initSchema();
+  let text = await pdfToText(buf);
+  if (looksGarbled(text)) {
+    if (FEEDER_OCR === "true") text = (await ocrPdf(buf)).replace(/\u0000/g, "").normalize("NFC");
+    if (looksGarbled(text)) throw new Error("Text layer is unreadable (font-scrambled or scanned); set FEEDER_OCR=true or supply a clean PDF.");
+  }
+  const chunks = chunkStatute(prepareGazetteText(text));
+  if (!chunks.length) throw new Error("No chunks produced from this PDF.");
+  const cls = { lawRef: opts.law, area: opts.area, title: opts.title || null, amends: [], publishedAt: opts.publishedAt || null };
+  console.log(`${opts.law}: ${chunks.length} chunks from ${new Set(chunks.map((c) => c.article)).size} articles — embedding…`);
+  await storeStatute(opts.fek, cls, chunks, "approved");
+  await record(opts.fek, "ingested", { ...cls, chunks: chunks.length, note: "Manual file ingest." });
+  console.log(`✓ ${opts.law} stored (ΦΕΚ ${opts.fek}, ${chunks.length} chunks, approved).`);
+}
+
 async function setReview(id, action) {
   if (!/^\d{11}$/.test(id || "")) throw new Error("Usage: --approve|--reject <11-digit fekId>");
   await initSchema();
@@ -212,7 +235,8 @@ async function setReview(id, action) {
 }
 
 const [flag, arg] = process.argv.slice(2);
-const main = flag === "--approve" ? () => setReview(arg, "approve")
+const main = flag === "--file" ? () => ingestFile(parseIngestFileArgs(process.argv.slice(2)))
+  : flag === "--approve" ? () => setReview(arg, "approve")
   : flag === "--reject" ? () => setReview(arg, "reject")
   : run;
 main().then(() => pool.end()).catch(async (e) => {
