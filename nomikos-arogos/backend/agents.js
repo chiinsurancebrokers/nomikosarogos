@@ -137,6 +137,9 @@ export async function sourceChecker(anthropic, { query, sources }) {
       : [];
     // Safety net: if the filter is too aggressive, keep the original ranking.
     if (keep.length < 2) return { sources, dropped: 0 };
+    // Anchored sources (the question named that institution) are never dropped: a source is
+    // judged on its first 280 characters, which can look unrelated for a long article.
+    sources.forEach((s, i) => { if (s.anchored && !keep.includes(i + 1)) keep.push(i + 1); });
     const kept = keep.sort((a, b) => a - b).map((n) => sources[n - 1]);
     return { sources: kept, dropped: sources.length - kept.length };
   } catch (e) {

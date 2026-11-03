@@ -37,7 +37,7 @@ function keyTerms(text) {
 }
 
 // Which concept anchors does this (expanded) query fire? Returns [{code, article}] pairs.
-function firedAnchors(searchText, area) {
+export function firedAnchors(searchText, area) {
   const hay = deaccent(searchText);
   const out = [];
   for (const a of ANCHORS) {
@@ -58,18 +58,46 @@ async function fetchAnchorChunks(pairs) {
   if (!pairs.length) return [];
   const codes = pairs.map((p) => p.code);
   const arts = pairs.map((p) => p.article);
+  // ALL chunks of each anchored article, in text order (long articles are split into several
+  // chunks, and the rule the user needs may sit in a later one). Capped so anchors can't flood.
   const sql = `
-    SELECT DISTINCT ON (c.code_name, c.article) c.code_name, c.area, c.article, c.content
+    SELECT c.code_name, c.area, c.article, c.content
     FROM chunks c
     JOIN unnest($1::text[], $2::text[]) AS w(code, art)
       ON c.code_name = w.code AND c.article = w.art
-    ORDER BY c.code_name, c.article, length(c.content) DESC`;
+    ORDER BY c.code_name, c.article, c.id
+    LIMIT 12`;
   try {
     return (await pool.query(sql, [codes, arts])).rows;
   } catch (e) {
     console.error("anchor fetch failed (skipping anchors):", e?.message);
     return [];
   }
+}
+
+// Combine anchor chunks and ranked search hits into the final source list (≤ k).
+// Several chunks of the SAME article are kept (up to perArticleCap) — they are distinct pieces of
+// text that share one label. Exact duplicates are dropped. Anchor chunks are flagged `anchored`
+// so later filters never remove them: the question named that institution explicitly.
+export function mergeSources(anchorRows, scored, k, perArticleCap = 3) {
+  const out = [];
+  const seen = new Set();
+  const perRef = new Map();
+  const push = (ref, text, score, anchored) => {
+    const key = `${ref}|${text.slice(0, 80)}`;
+    if (seen.has(key)) return;
+    if (!anchored && (perRef.get(ref) || 0) >= perArticleCap) return;
+    seen.add(key);
+    perRef.set(ref, (perRef.get(ref) || 0) + 1);
+    out.push(anchored ? { ref, text, score, anchored: true } : { ref, text, score });
+  };
+  for (const r of anchorRows) push(`${r.code_name} άρθρο ${r.article}`, r.content, 1, true);
+  for (const { r, score } of scored) {
+    if (out.length >= k) break;
+    const ref = r.article ? `${r.code_name} άρθρο ${r.article}` : r.decision ? r.decision : r.code_name;
+    push(ref, r.content, score, false);
+  }
+  return out;
 }
 
 export async function retrieveSources(searchText, area, k = Number(process.env.RETRIEVE_K) || 16) {
@@ -136,20 +164,5 @@ export async function retrieveSources(searchText, area, k = Number(process.env.R
   //    Αστικός Κώδικας 904) appear whenever the query mentions them, even if search ranked them low ──
   const anchorRows = await fetchAnchorChunks(firedAnchors(searchText, area));
 
-  const out = [];
-  const seenRef = new Set();
-  const push = (ref, text, score) => {
-    if (seenRef.has(ref)) return;
-    seenRef.add(ref);
-    out.push({ ref, text, score });
-  };
-  // anchors first (they are relevant by construction — the query named the institution)
-  for (const r of anchorRows) push(`${r.code_name} άρθρο ${r.article}`, r.content, 1);
-  // then fill the rest with the best hybrid hits, up to k total
-  for (const { r } of scored) {
-    if (out.length >= k) break;
-    const ref = r.article ? `${r.code_name} άρθρο ${r.article}` : r.decision ? r.decision : r.code_name;
-    push(ref, r.content, r.score);
-  }
-  return out;
+  return mergeSources(anchorRows, scored, k);
 }
