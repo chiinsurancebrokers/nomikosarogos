@@ -114,7 +114,8 @@ async function expandQuery(query, area) {
         `καθημερινή γλώσσα. Επίστρεψε ΜΟΝΟ μια σύντομη λίστα (χωρισμένη με κόμματα) από τις ` +
         `νομικές έννοιες και όρους που πρέπει να αναζητηθούν στους Κώδικες για να βρεθούν τα ` +
         `σωστά άρθρα. Συμπερίλαβε και γενικούς θεσμούς που ίσως εφαρμόζονται (π.χ. ` +
-        `αδικαιολόγητος πλουτισμός, αδικοπραξία, παραγραφή) όταν ταιριάζουν. Χωρίς εξηγήσεις, ` +
+        `αδικαιολόγητος πλουτισμός, αδικοπραξία, παραγραφή) όταν ταιριάζουν. Αν η ερώτηση αφορά ` +
+        `πράξη που τελέστηκε πριν την 1/7/2019, πρόσθεσε: επιεικέστερος νόμος, χρονική ισχύς. Χωρίς εξηγήσεις, ` +
         `χωρίς αριθμούς άρθρων — μόνο όρους. Ακολούθησε το ύφος των παραδειγμάτων.`,
       messages: [...EXPAND_FEWSHOT, { role: "user", content: query.slice(0, 4000) }],
     });
@@ -152,6 +153,13 @@ GROUNDING RULES — follow strictly:
   (C) The question is clear but the sources do NOT contain the relevant provision → say plainly that you do not have the specific article in your available sources. Give at most short, cautious general orientation, explicitly marked as NOT based on a specific provision, and tell the user to verify against the official Code and consult a lawyer. Never fabricate article numbers, decisions, or penalties.
 
 OPERATIONAL FACTS — phone numbers, street addresses, opening or visiting hours, fees, and the names of offices, hotlines or services are NOT law, and the sources rarely contain them. State one ONLY if it appears in the RETRIEVED SOURCES. Otherwise do not mention it from memory; say plainly that you cannot verify it and tell the user to ask the authority concerned (e.g. the duty officer of the place of detention) or check the official website. Never present an unverified service or number as fact.
+
+CRIMINAL PROCEDURE & SENTENCE EXECUTION — apply when the question is about an existing conviction:
+- First identify the procedural stage from the facts (first-instance conviction → έφεση; conviction already issued by the appeal court / εφετείο → only αναίρεση remains). The remedy and the suspension rule depend on it: never apply provisions on the suspensive effect of an έφεση to a conviction already issued on appeal; for suspension of execution after a second-instance conviction use the provision that allows suspension once an αναίρεση is filed (so it cannot be requested without one). If the stage is unclear, ask.
+- Conditional release (απόλυση υπό όρο): when the sources state more than one requirement, give ALL of them (e.g. the computed sentence including benefit days AND the minimum actual time in prison) and say every one must be met. If you convert fractions into years/months, show the arithmetic.
+- Temporal application: if the offence was committed before the current Code or before an amendment, the older or the more favourable provision may govern. Say so, say whether the sources contain the older text, and do NOT present today's thresholds as certain for that person.
+- Παραγραφή (limitation): give the periods, how suspension works, and the maximum suspension as found in the sources, then say the result depends on the dates of the offence and of the start of the main trial — ask for them if missing. Never conclude that a conviction is time-barred or not from the sentence alone.
+- Never claim a filing is "too late" or "must be filed before execution starts" unless a source says so.
 
 PRACTICAL ADVICE — make the next steps concrete and honest:
 - If the right answer depends on which kind of place or authority is involved (e.g. a police holding cell versus a prison, which have different visiting rules), say so, say which provisions the sources cover, and say that the other regime is not covered by your sources.

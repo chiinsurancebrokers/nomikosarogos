@@ -55,3 +55,13 @@ test("detention questions also anchor π.δ. 254/2004 art. 3", () => {
   const f = firedAnchors("Κρατείται στα κρατητήρια, μπορώ να επικοινωνήσω με δικηγόρο;", "criminal");
   assert.ok(f.some((p) => p.code === "π.δ. 254/2004" && p.article === "3"));
 });
+
+test("sentence-execution question fires 471/105Β/παραγραφή anchors and NOT the police-cell ones", () => {
+  const q = "Καταδικάστηκε σε 6ετη κάθειρξη από το εφετείο και βρίσκεται στο Τμήμα Μεταγωγών. Σχετικές έννοιες: αναστολή εκτέλεσης, αναίρεση, απόλυση υπό όρο, ευεργετικός υπολογισμός, παραγραφή";
+  const f = firedAnchors(q, "criminal");
+  const has = (code, art) => f.some((p) => p.code === code && p.article === art);
+  assert.ok(has("Κώδικας Ποινικής Δικονομίας", "471"));
+  assert.ok(has("Ποινικός Κώδικας", "105Β"));
+  assert.ok(has("Ποινικός Κώδικας", "111"));
+  assert.ok(!f.some((p) => p.code === "π.δ. 141/1991" || p.code === "π.δ. 254/2004"));
+});
