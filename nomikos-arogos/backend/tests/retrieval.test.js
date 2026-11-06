@@ -65,3 +65,10 @@ test("sentence-execution question fires 471/105Β/παραγραφή anchors and
   assert.ok(has("Ποινικός Κώδικας", "111"));
   assert.ok(!f.some((p) => p.code === "π.δ. 141/1991" || p.code === "π.δ. 254/2004"));
 });
+
+test("merger-of-sentences question fires ΠΚ 94 and ΚΠΔ 551 anchors", () => {
+  const q = "6 έτη κάθειρξη και 5 έτη φυλάκιση, δεν έχουν συγχωνευθεί. Σχετικές έννοιες: συνολική ποινή, συρροή εγκλημάτων";
+  const f = firedAnchors(q, "criminal");
+  assert.ok(f.some((p) => p.code === "Ποινικός Κώδικας" && p.article === "94"));
+  assert.ok(f.some((p) => p.code === "Κώδικας Ποινικής Δικονομίας" && p.article === "551"));
+});
