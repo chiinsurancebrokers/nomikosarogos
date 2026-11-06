@@ -43,6 +43,7 @@ export function firedAnchors(searchText, area) {
   for (const a of ANCHORS) {
     if (area === "civil" && a.area === "criminal") continue;
     if (area === "criminal" && a.area === "civil") continue;
+    if (a.unless && a.unless.some((t) => hay.includes(deaccent(t)))) continue;
     if (a.triggers.some((t) => hay.includes(deaccent(t)))) {
       for (const art of a.articles) out.push({ code: a.code, article: String(art) });
     }
