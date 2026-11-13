@@ -174,3 +174,23 @@ test("CASE-11: file facts alone do NOT prove deception, debt amount or ownership
     materialIssues: plaintiffClaims.length,
   }));
 });
+
+
+test("CASE-12: secondary death of predeceased brother must NOT override estate owner's date", () => {
+  const temporal = determineInheritanceLaw({
+    question: "Αγωγή ακύρωσης αποποίησης κληρονομίας λόγω πλάνης.",
+    docFacts: {
+      dates: [
+        { label: "Θάνατος κληρονομουμένης", date: "07/10/2025" },
+        { label: "Θάνατος αδελφού της κληρονομουμένης", date: "16/11/2024" },
+        { label: "Αποποίηση", date: "15/01/2026" },
+      ],
+      summary: "Η κληρονομουμένη απεβίωσε στις 7 Οκτωβρίου 2025. Ο αδελφός της απεβίωσε τον Νοέμβριο 2024.",
+      searchTerms: ["ακύρωση αποποίησης"],
+    },
+  });
+  assert.equal(temporal.status, "legacy");
+  assert.equal(temporal.deathDate, "2025-10-07");
+  assert.deepEqual(temporal.dates, ["2025-10-07"]);
+  console.log("SANDBOX CASE-12", JSON.stringify({ deathOfEstateOwner: temporal.deathDate, secondaryDeathIgnored: true }));
+});
