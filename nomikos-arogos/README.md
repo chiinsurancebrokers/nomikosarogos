@@ -17,7 +17,7 @@ grounded in the official Codes and case law, and routes them to free legal aid.
    │
  Backend (Express on Railway)
    ├─ requireAuth        verify Supabase token (JWKS, local)
-   ├─ retrieveSources    RAG over official Codes + case law (pgvector)
+   ├─ retrieveSources    RAG over indexed Codes and any separately added case law (pgvector)
    ├─ Claude             grounded analysis (Opus 4.8 deep / Sonnet 4.6 quick)
    └─ OpenAI             verifies Claude's citations against the same sources
    ▼
@@ -35,7 +35,7 @@ nomikos-arogos/
 
 ## Go live (order matters)
 
-### 1. Supabase (EU region — keeps personal data in the EU)
+### 1. Supabase (EU-region database — model API transfers require a separate review)
 - Create a project in an **EU region**.
 - Auth → Email: enable email **OTP / magic code** sign-in.
 - Copy the **Project URL** and the **anon (publishable) key**.
@@ -76,12 +76,10 @@ git push -u origin main
 - **Populate the index.** `npm run ingest` must succeed, or answers fall back to model
   memory. Some 2019 Ministry PDFs use legacy Greek font encodings that extract as garbage;
   `ingest.js` detects and skips those — OCR them (Tesseract `ell`) and re-ingest from a local path.
-- **Keep amendments current.** The 2019 Codes aren't always the latest text (ΠΚ, ΚΠολΔ have
-  changed). Track the ΦΕΚ and re-ingest periodically.
-- **Data protection.** Uploaded documents are processed in memory and not persisted or logged;
-  enable zero-retention/no-training on the model APIs; consider redacting PII before sending.
+- **Keep amendments current.** The indexed Codes may not represent the law in force for the event date. Track ΦΕΚ, transitional provisions and historical versions; new feeder material is held for review by default.
+- **Data protection.** Uploaded documents are processed in memory and not persisted or logged by the analysis endpoint; feedback can store personal legal narratives. Verify provider contracts, API data-handling settings, cross-border transfers, redaction, retention and access control. EU database hosting alone does not ensure EU-only AI processing.
 - **Cost control.** `deep` mode runs Opus + the OpenAI verifier — reserve it for the toggle;
   `quick` (Sonnet only) keeps a free tier viable.
-- **Not legal advice.** Keep the disclaimer and free-legal-aid routing prominent.
+- **Not legal advice.** Keep the disclaimer and free-legal-aid routing prominent. Read `LEGAL_QUALITY_PLAN.md` before relying on legal output.
 
 See `backend/README.md` for backend-specific details.
