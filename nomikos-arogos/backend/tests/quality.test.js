@@ -38,3 +38,29 @@ test("non-high-risk quick answer is visibly preliminary", () => {
   assert.equal(q.status, "preliminary");
   assert.equal(q.publishDraft, true);
 });
+
+
+test("missing decision citations cannot be published even if an AI verifier says supported", () => {
+  const r = assessEvidence({
+    sources: source, reviewRequested: true, verification: { verdict: "supported" },
+    citations: { direct: [], secondhand: [], missing: ["ΑΠ 999/2020"] },
+  });
+  assert.equal(r.status, "unsupported_case_law");
+  assert.equal(r.publishDraft, false);
+});
+
+test("secondhand citation is not independent case law", () => {
+  const r = assessEvidence({
+    sources: source, reviewRequested: false,
+    citations: { direct: [], secondhand: ["ΟλΑΠ 3/1989"], missing: [] },
+  });
+  assert.equal(r.publishDraft, false);
+});
+
+test("only directly retrieved case law may pass the court-citation gate", () => {
+  const r = assessEvidence({
+    sources: source, reviewRequested: true, verification: { verdict: "supported" },
+    citations: { direct: ["ΑΠ 1497/2023"], secondhand: [], missing: [] },
+  });
+  assert.equal(r.publishDraft, true);
+});
