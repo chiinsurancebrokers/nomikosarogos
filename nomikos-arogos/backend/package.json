@@ -9,7 +9,8 @@
     "ingest": "node ingest.js",
     "feed": "node feeder.js",
     "test": "node --test",
-    "decisions": "node decisions.js"
+    "decisions": "node decisions.js",
+    "evals": "node evals/run.js"
   },
   "engines": {
     "node": "22.x"

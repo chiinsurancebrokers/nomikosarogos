@@ -107,7 +107,9 @@ export async function retrieveSources(searchText, area, k = Number(process.env.R
   const [qvec] = await embed(searchText);
   const vecLiteral = `[${qvec.join(",")}]`;
   const useFilter = area === "civil" || area === "criminal" || area === "admin";
-  const REVIEW_OK = "(review_status IS NULL OR review_status = 'approved')"; // hide held statutes
+  // Decisions require explicit approval. Older decision rows with NULL review_status
+  // are not implicitly trusted. Other sources retain their existing review policy.
+  const REVIEW_OK = "((source = 'decisions' AND review_status = 'approved') OR (source <> 'decisions' AND (review_status IS NULL OR review_status = 'approved')))";
   const areaClause = useFilter ? `WHERE area = $3 AND ${REVIEW_OK}` : `WHERE ${REVIEW_OK}`;
 
   // ── semantic leg: vector nearest neighbours (a generous candidate pool) ──
