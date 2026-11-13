@@ -19,9 +19,11 @@ const strip = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g
 export function validateDecisionText(d, text) {
   const { ref } = validateDecisionManifestEntry(d);
   const m = /^ΑΠ\s+(\d+)\/(\d{4})$/u.exec(ref);
-  const head = strip(text).slice(0, 3500);
-  // A casual citation inside the body is NOT enough to establish document identity.
-  const pattern = new RegExp(`(?:αριθμος|αριθμ\\.)\\s*[:.]?\\s*0*${Number(m[1])}\\s*\\/\\s*${m[2]}(?!\\d)`, "u");
-  if (!pattern.test(head)) throw new Error("Decision number/year not confirmed in the document header");
+  const head = strip(text).slice(0, 10000);
+  // Check the FIRST document-number heading, not a number merely cited later.
+  // This avoids accepting a 1496/2023 page because it incidentally cites 1497/2023.
+  const h = /(?:αριθμος|αριθμ\\.)\\s*(?:αποφασης\\s*)?[:.]?\\s*0*(\\d{1,5})\\s*\\/\\s*(\\d{4})(?!\\d)/u.exec(head);
+  if (!h || Number(h[1]) !== Number(m[1]) || h[2] !== m[2])
+    throw new Error("First decision heading does not match manifest reference");
   return true;
 }
