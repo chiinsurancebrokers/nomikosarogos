@@ -5,10 +5,10 @@
 ## Findings (13 November 2026)
 
 1. The source manifest contains historical PDF versions of Greek Codes, but has no source-level provenance, amendment history or effective-date metadata.
-2. No judicial decisions appear in `backend/sources.json` today. Court-case analysis cannot claim coverage of Greek case law until decisions are indexed with verified text and provenance.
+2. PR #15 added `backend/decisions.json` (22 candidate Άρειος Πάγος references) and an indexer; `backend/sources.json` still contains no case-law entries. PR #15 did not establish that all 22 decisions have been fetched or legally reviewed. The new indexer quarantines imported decisions by default until approved.
 3. The feeder previously auto-approved new statutes by default. Human review is now required by default. Backfill and review any previously skipped or indexed statutes.
 4. The feeder previously treated laws 5303/2026, 5336/2026 and 5344/2026 as consolidated without checking the local source PDF. This skip-list has been removed. For example, 5303/2026 entirely renumbered the inheritance section. Do not treat publication date as the effective date.
-5. Source-only verification is not a proof of *temporal applicability*. New quality gates decline unsupported drafts and warn that the event-time version must still be checked.
+5. Source-only verification is not a proof of *temporal applicability*. New quality gates decline unsupported drafts or unknown/secondhand case-law citations and warn that the event-time version must still be checked.
 6. Uploaded legal documents can contain sensitive personal data. The PostgreSQL/Supabase region does not prove all processing occurs in the EU: review Anthropic/OpenAI arrangements and feedback retention. Do not store uploaded files or real-case test sets in a public repository.
 
 ## Phase 2: trustworthy knowledge graph
@@ -52,3 +52,12 @@ The system should not advertise legal accuracy comparable to a lawyer or a comme
 - [ ] Secure case files outside this public GitHub repository.
 - [ ] Have a qualified Greek lawyer approve benchmark expected answers and all deadline calculation rules.
 - [ ] Run regression checks before every corpus update.
+
+## PR #15 follow-up — decisions and evaluations
+
+- Court decision ingest: `cd nomikos-arogos/backend && npm run decisions`. An entry is rejected if the HTTPS domain, path, URL's `apof` id, or opening decision-number heading does not match the manifest; OCR/HTML parsing failures are reported, not silently accepted.
+- New decisions are stored with `review_status='pending'`, excluded from RAG until a qualified human checks the actual full decision and its relevance. In Railway's backend environment, approve with `node decisions.js --approve "ΑΠ 1497/2023"` (or reject with `--reject`). This CLI **does not perform legal review** by itself.
+- Legacy unreviewed `decisions` rows with `review_status IS NULL` are also hidden from retrieval. Verify existing records and explicitly approve after inspection.
+- Each chunk carries its exact official URL. The server publishes clickable official court links only when the domain and decision identifier match.
+- Offline evaluation: capture a response locally, map cases by ID in a private JSON file (`{ "cases": { "inh-1857-old-text": { "analysis": "...", "retrievedSources": [] } } }`), run `npm run evals -- ./evals/answers.json`. This tests textual expectations and citation discipline only; **it is not a certified legal accuracy score**. Do not commit personal case answers to public GitHub.
+- Underlying live Postgres coverage, official URL responsiveness and correctness of legal holdings remain **unverified** until deployed and inspected.
