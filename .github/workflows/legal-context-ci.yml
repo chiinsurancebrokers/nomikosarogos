@@ -1,0 +1,33 @@
+name: Legal context regression
+on:
+  pull_request:
+    paths:
+      - 'nomikos-arogos/backend/**'
+      - 'nomikos-arogos/frontend/**'
+      - '.github/workflows/legal-context-ci.yml'
+  workflow_dispatch:
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nomikos-arogos/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: npm test
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nomikos-arogos/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
