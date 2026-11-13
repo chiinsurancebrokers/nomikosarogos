@@ -20,6 +20,7 @@ import { retrieveSources } from "./retrieve.js";
 import { requiresIndependentReview, assessEvidence } from "./quality.js";
 import { requireAuth } from "./auth.js";
 import { classifyCitations } from "./citations.js";
+import { buildSourceLinks } from "./sourceLinks.js";
 import { pool, ensureFeedbackSchema, ensureFeederSchema } from "./db.js";
 import {
   documentAgent, docFactsBlock, intakeAgent, intakeReply, sourceChecker, currencyAgent,
@@ -377,6 +378,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
       quality,
       verification,
       citations: citations.missing.length || citations.secondhand.length ? citations : null,
+      sourceLinks: buildSourceLinks(sources),
       sources: [...new Set(sources.map((s) => s.ref))], // unique labels; never echo full source text back wholesale
       agents: {
         sourceCheck: { kept: sources.length, dropped: checked.dropped },
