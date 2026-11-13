@@ -360,13 +360,14 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
     }
     const searchText = await expandQuery(query, area); // lay wording → legal concepts
     const retrieved = await retrieveSources(searchText, area);
-
-    // Agent 3: drop retrieved articles that do not bear on the question.
-    const checked = await sourceChecker(anthropic, { query, sources: retrieved });
     const historicArticle = await fetchInheritanceArticle(temporal);
-    const rawSources = [...historicArticle, ...checked.sources];
-    const guarded = guardInheritanceSources(rawSources, temporal);
+    // Temporal law must be selected BEFORE any LLM ranks or reads legal sources.
+    const preGuard = guardInheritanceSources([...historicArticle, ...retrieved], temporal);
+    // Agent 3: only consider provisions applicable to the event-time regime.
+    const checked = await sourceChecker(anthropic, { query, sources: preGuard.sources });
+    const guarded = guardInheritanceSources(checked.sources, temporal);
     const sources = guarded.sources;
+    const temporallyExcluded = preGuard.excluded + guarded.excluded;
     if (temporal.issue === "renunciation_annulment" && !guarded.foundApplicableArticle) {
       const msg = lang === "en"
         ? "I identified the applicable inheritance-law version but cannot retrieve its verified article text. Legal analysis is withheld."
@@ -379,7 +380,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
         sources: [INHERITANCE_REFORM.sourceRef], verification: null, citations: null,
         sourceLinks: [], caseLaw: null,
         agents: { temporalLaw: { status: temporal.status, applicableArticle: temporal.applicableArticle },
-          sourceCheck: { kept: sources.length, dropped: checked.dropped + guarded.excluded } },
+          sourceCheck: { kept: sources.length, dropped: checked.dropped + temporallyExcluded } },
         disclaimer: lang === "en" ? "Information, not legal advice." : "Πληροφόρηση, όχι νομική συμβουλή.",
       });
     }
@@ -430,7 +431,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
       sourceLinks: buildSourceLinks(sources),
       sources: [...new Set(sources.map((s) => s.ref))], // unique labels; never echo full source text back wholesale
       agents: {
-        sourceCheck: { kept: sources.length, dropped: checked.dropped + guarded.excluded },
+        sourceCheck: { kept: sources.length, dropped: checked.dropped + temporallyExcluded },
         temporalLaw: temporal.status !== "not_applicable" ? { status: temporal.status, applicableArticle: temporal.applicableArticle } : null,
         currency: currency.notice || currency.current?.length ? { notice: currency.notice, current: currency.current } : null,
         document: docFacts
