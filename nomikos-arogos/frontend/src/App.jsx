@@ -39,6 +39,7 @@ const T = {
     disTitle: "Πριν ξεκινήσετε", disOk: "Κατάλαβα, συνέχεια",
     disBody: "Γενική νομική πληροφόρηση βασισμένη στους ελληνικούς Κώδικες. ΔΕΝ είναι δικηγόρος και δεν αντικαθιστά τη νομική συμβουλή. Επαληθεύστε τα άρθρα και απευθυνθείτε σε δικηγόρο. Μην εισάγετε ευαίσθητα προσωπικά δεδομένα.",
     err: "Παρουσιάστηκε σφάλμα. Δοκιμάστε ξανά.",
+    tooBig: "Το αρχείο είναι πολύ μεγάλο (μέγιστο 20MB). Δοκιμάστε μικρότερο αρχείο ή λιγότερες σελίδες.",
     agentIntake: "Διευκρίνιση", agentDoc: "Ανάγνωση εγγράφου", agentSources: "Έλεγχος πηγών",
     agentCurrency: "Έλεγχος επικαιρότητας",
     sourcesDropped: (k, d) => `${k} πηγές κρατήθηκαν · ${d} άσχετες αφαιρέθηκαν`,
@@ -79,6 +80,7 @@ const T = {
     disTitle: "Before you start", disOk: "I understand, continue",
     disBody: "General legal information based on the Greek Codes. NOT a lawyer and no substitute for legal advice. Verify articles and consult a lawyer. Do not enter sensitive personal data.",
     err: "Something went wrong. Please try again.",
+    tooBig: "The file is too large (max 20MB). Please try a smaller file or fewer pages.",
     agentIntake: "Clarifying", agentDoc: "Document read", agentSources: "Source check",
     agentCurrency: "Currency check",
     sourcesDropped: (k, d) => `${k} sources kept · ${d} unrelated removed`,
@@ -110,6 +112,8 @@ const COURTS = [
   ["Άρειος Πάγος", "https://www.areiospagos.gr/"],
   ["ΣτΕ / Διοικητικά", "https://www.adjustice.gr/webcenter/portal/ste/ypiresies/nomologies"],
 ];
+
+const MAX_FILE_BYTES = 20 * 1024 * 1024; // base64 inflates ~33%; server JSON limit is 35mb
 
 function fileToBase64(file) {
   return new Promise((res, rej) => {
@@ -386,6 +390,7 @@ function MainApp({ lang, setLang, onSignOut }) {
         }),
       });
       if (res.status === 401) setError(t.authExpired);
+      else if (res.status === 413) setError(t.tooBig);
       else if (!res.ok) setError(t.err);
       else {
         const data = await res.json();
@@ -499,7 +504,13 @@ function MainApp({ lang, setLang, onSignOut }) {
               <div className="composer">
                 <label className="icon-btn" title={t.attach}>
                   📎
-                  <input type="file" accept="application/pdf,image/*" style={{ display: "none" }} onChange={(e) => setDocFile(e.target.files?.[0] || null)} />
+                  <input type="file" accept="application/pdf,image/*" style={{ display: "none" }} onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    e.target.value = "";
+                    if (f && f.size > MAX_FILE_BYTES) { setError(t.tooBig); return; }
+                    setError("");
+                    setDocFile(f);
+                  }} />
                 </label>
                 <textarea
                   value={input}

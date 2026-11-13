@@ -42,7 +42,7 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 const app = express();
 app.use(cors({ origin: ALLOWED_ORIGIN }));
-app.use(express.json({ limit: "25mb" })); // base64 documents can be large
+app.use(express.json({ limit: "35mb" })); // base64 documents can be large
 
 // ── 1. RAG retrieval ─────────────────────────────────────────────────────────
 // Implemented in retrieve.js (cosine search over pgvector). Run `npm run ingest`
@@ -383,6 +383,13 @@ app.post("/api/feedback", requireAuth, async (req, res) => {
     console.error("feedback error:", e?.message);
     res.status(500).json({ error: "Could not save feedback" });
   }
+});
+
+// Body-parser errors (e.g. payload too large) -> clean JSON instead of a stack trace.
+app.use((err, _req, res, next) => {
+  if (err?.type === "entity.too.large") return res.status(413).json({ error: "File too large" });
+  if (err?.type === "entity.parse.failed") return res.status(400).json({ error: "Invalid JSON" });
+  return next(err);
 });
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
