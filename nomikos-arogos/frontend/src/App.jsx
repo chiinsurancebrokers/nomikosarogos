@@ -22,6 +22,8 @@ const T = {
     steps: ["1 Περιγραφή", "2 Έλεγχος πηγών", "3 Καθοδήγηση"],
     placeholder: "Περιγράψτε με απλά λόγια τι συμβαίνει…",
     chatPlaceholder: "Γράψτε το μήνυμά σας…",
+    lawyer: "Λειτουργία δικηγόρου (τεχνική ανάλυση)", citWarnT: "Παραπομπές σε νομολογία που δεν επαληθεύτηκαν",
+    citMissing: "Δεν υπάρχουν στις πηγές μου (πιθανώς ανακριβείς)", citSecond: "Αναφέρονται μόνο μέσα σε άλλη απόφαση (δεν διαβάστηκαν)",
     deep: "Εκτενής ανάλυση", attach: "Επισύναψη", remove: "Αφαίρεση",
     send: "Αποστολή", newChat: "Νέα συνομιλία", asking: "Αναζήτηση και έλεγχος πηγών",
     startHint: "Διαλέξτε τομέα και περιγράψτε το ζήτημά σας — μετά μπορείτε να συνεχίσετε τη συζήτηση.",
@@ -63,6 +65,8 @@ const T = {
     steps: ["1 Describe", "2 Check sources", "3 Guidance"],
     placeholder: "Describe in plain words what is happening…",
     chatPlaceholder: "Type your message…",
+    lawyer: "Lawyer mode (technical analysis)", citWarnT: "Case-law citations that could not be verified",
+    citMissing: "Not in my sources (possibly inaccurate)", citSecond: "Only cited inside another decision (not read)",
     deep: "Extended analysis", attach: "Attach", remove: "Remove",
     send: "Send", newChat: "New conversation", asking: "Searching and checking sources",
     startHint: "Pick an area and describe your situation — then you can keep the conversation going.",
@@ -290,6 +294,14 @@ function AssistantBubble({ msg, prevUserText, area, mode, lang }) {
 
       <Markdown>{msg.content}</Markdown>
 
+      {(msg.citations?.missing?.length > 0 || msg.citations?.secondhand?.length > 0) && (
+        <div className="callout warn">
+          <b>⚠️ {t.citWarnT}.</b>
+          {msg.citations.missing.length > 0 && <div>{t.citMissing}: {msg.citations.missing.join(", ")}</div>}
+          {msg.citations.secondhand.length > 0 && <div>{t.citSecond}: {msg.citations.secondhand.join(", ")}</div>}
+        </div>
+      )}
+
       {agents.currency?.notice && (
         <div className="callout warn"><b>🕒 {t.currencyT}.</b> {agents.currency.notice}</div>
       )}
@@ -350,6 +362,7 @@ function MainApp({ lang, setLang, onSignOut }) {
   const [area, setArea] = useState("civil");
   const [input, setInput] = useState("");
   const [mode, setMode] = useState("quick");
+  const [audience, setAudience] = useState("citizen");
   const [docFile, setDocFile] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -386,7 +399,7 @@ function MainApp({ lang, setLang, onSignOut }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           messages: history.map((m) => ({ role: m.role, content: m.content })),
-          area, lang, mode, document,
+          area, lang, mode, audience, document,
         }),
       });
       if (res.status === 401) setError(t.authExpired);
@@ -396,7 +409,7 @@ function MainApp({ lang, setLang, onSignOut }) {
         const data = await res.json();
         setMessages((prev) => [...prev, {
           role: "assistant", content: data.analysis, sources: data.sources,
-          verification: data.verification, disclaimer: data.disclaimer, agents: data.agents,
+          verification: data.verification, citations: data.citations, disclaimer: data.disclaimer, agents: data.agents,
         }]);
       }
     } catch { setError(t.err); }
@@ -524,6 +537,10 @@ function MainApp({ lang, setLang, onSignOut }) {
               <label className="deep-toggle">
                 <input type="checkbox" checked={mode === "deep"} onChange={(e) => setMode(e.target.checked ? "deep" : "quick")} />
                 <span>{t.deep}</span>
+              </label>
+              <label className="deep-toggle">
+                <input type="checkbox" checked={audience === "lawyer"} onChange={(e) => setAudience(e.target.checked ? "lawyer" : "citizen")} />
+                <span>{t.lawyer}</span>
               </label>
             </div>
           </div>

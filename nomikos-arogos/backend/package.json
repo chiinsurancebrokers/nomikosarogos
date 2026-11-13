@@ -8,7 +8,8 @@
     "start": "node server.js",
     "ingest": "node ingest.js",
     "feed": "node feeder.js",
-    "test": "node --test"
+    "test": "node --test",
+    "decisions": "node decisions.js"
   },
   "engines": {
     "node": "22.x"
