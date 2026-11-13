@@ -1,0 +1,45 @@
+name: Legal reliability checks
+
+on:
+  pull_request:
+    paths:
+      - 'nomikos-arogos/backend/**'
+      - 'nomikos-arogos/frontend/**'
+      - '.github/workflows/legal-quality.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'nomikos-arogos/backend/**'
+      - 'nomikos-arogos/frontend/**'
+      - '.github/workflows/legal-quality.yml'
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nomikos-arogos/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: nomikos-arogos/backend/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nomikos-arogos/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: nomikos-arogos/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
