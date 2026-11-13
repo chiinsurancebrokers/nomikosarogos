@@ -21,6 +21,7 @@ import { requiresIndependentReview, assessEvidence } from "./quality.js";
 import { requireAuth } from "./auth.js";
 import { classifyCitations } from "./citations.js";
 import { buildSourceLinks } from "./sourceLinks.js";
+import { adminDecisions } from "./adminDecisions.js";
 import { researchCaseLaw } from "./caseLawResearch.js";
 import { determineInheritanceLaw, guardInheritanceSources, assessTemporalDraft, temporalNotice, INHERITANCE_REFORM } from "./temporalLaw.js";
 import { fetchInheritanceArticle } from "./applicableLawSource.js";
@@ -52,6 +53,7 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 const app = express();
 app.use(cors({ origin: ALLOWED_ORIGIN }));
 app.use(express.json({ limit: "35mb" })); // base64 documents can be large
+app.use("/api/admin", adminDecisions); // operator-only; off unless ADMIN_TOKEN is set
 
 // ── 1. RAG retrieval ─────────────────────────────────────────────────────────
 // Implemented in retrieve.js (cosine search over pgvector). Run `npm run ingest`

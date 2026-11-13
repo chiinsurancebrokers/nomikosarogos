@@ -52,7 +52,7 @@ async function fetchDecision(url) {
 
 const batch = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 
-async function ingestOne(d) {
+export async function ingestOne(d) {
   const entry = validateDecisionManifestEntry(d); // block non-official domains and mismatched URL identifiers
   const html = await fetchDecision(entry.url);
   const text = htmlToText(html).normalize("NFC");
@@ -89,6 +89,34 @@ async function ingestOne(d) {
     client.release();
   }
   return rows.length; // review_status=pending; not searchable until approved by a human
+}
+
+export async function listDecisions() {
+  const { rows } = await pool.query(
+    "SELECT decision AS ref, review_status AS status, count(*)::int AS chunks FROM chunks WHERE source='decisions' GROUP BY decision, review_status ORDER BY decision"
+  );
+  return rows;
+}
+
+export async function setDecisionStatus(ref, approve) {
+  if (!/^ΑΠ \d{1,5}\/\d{4}$/u.test(ref || "")) throw new Error("Specify a decision ref, e.g. ΑΠ 1497/2023");
+  const result = approve
+    ? await pool.query("UPDATE chunks SET review_status = 'approved' WHERE source='decisions' AND decision=$1", [ref])
+    : await pool.query("DELETE FROM chunks WHERE source='decisions' AND decision=$1", [ref]);
+  if (!result.rowCount) throw new Error("No indexed decision with that reference");
+  return result.rowCount;
+}
+
+export async function ingestManifest(only = null) {
+  const list = JSON.parse(await fs.readFile(new URL("./decisions.json", import.meta.url), "utf8"));
+  const todo = only?.length ? list.filter((d) => only.some((o) => d.ref.endsWith(o))) : list;
+  const results = [];
+  for (const d of todo) {
+    try { results.push({ ref: d.ref, ok: true, chunks: await ingestOne(d) }); }
+    catch (e) { results.push({ ref: d.ref, ok: false, error: e.message }); }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return results;
 }
 
 async function main() {
