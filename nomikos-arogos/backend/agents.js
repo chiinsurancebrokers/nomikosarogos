@@ -48,6 +48,9 @@ export async function documentAgent(anthropic, { document, lang }) {
         "You read a document supplied by a citizen of Greece (court decision, summons, contract, notice, etc.) " +
         "and extract neutral facts for a legal-information tool. NEVER output personal names, ID/tax numbers, " +
         "addresses or phone numbers — refer to roles instead (e.g. 'the defendant', 'the tenant'). " +
+        "For inheritance documents: extract the date of DEATH separately with an explicit date label. " +
+        "Do not mistake the dates of disclaimer, filing, service, hearing or discovery of fraud for the death date. " +
+        "If the death date is not visible, do not infer it; omit it and report missing information. " +
         "Do not give legal advice. Respond with strict JSON: " +
         '{ "docType": string, "summary": string (max 3 sentences), "keyFacts": string[] (max 8), ' +
         '"dates": [{"label": string, "date": string}], "deadlines": string[], "searchTerms": string[] (Greek legal concepts, max 8) }. ' +
