@@ -357,6 +357,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
         ["date_required", "conflicting_death_dates"].includes(temporal.status)) {
       return res.json({
         analysis: temporalNotice(temporal, lang),
+        sessionFacts: sanitizeSessionFacts(docFacts),
         temporal: { status: temporal.status, issue: temporal.issue, dates: temporal.dates },
         quality: { status: "temporal_date_required", publishDraft: false },
         sources: [], verification: null, citations: null, sourceLinks: [], caseLaw: null,
@@ -375,6 +376,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
       const msg = historyStatusMessage(historical, lang);
       return res.json({
         analysis: msg,
+        sessionFacts: sanitizeSessionFacts(docFacts),
         historical: { status: historical.status, topic: historical.topic,
           eventType: historical.eventType, eventDate: historical.eventDate || null, notice: msg },
         quality: { status: "historical_law_unverified", publishDraft: false },
@@ -400,7 +402,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
         ? "I identified the applicable inheritance-law version but cannot retrieve its verified article text. Legal analysis is withheld."
         : "Εντοπίστηκε το εφαρμοστέο κληρονομικό καθεστώς, αλλά δεν ανακτήθηκε το αντίστοιχο επαληθευμένο άρθρο του ΑΚ. Η νομική ανάλυση αποκρύπτεται.";
       return res.json({
-        analysis: msg, temporal: { status: temporal.status, issue: temporal.issue,
+        analysis: msg, sessionFacts: sanitizeSessionFacts(docFacts), temporal: { status: temporal.status, issue: temporal.issue,
           deathDate: temporal.deathDate, applicableArticle: temporal.applicableArticle,
           sourceUrl: INHERITANCE_REFORM.officialUrl },
         quality: { status: "missing_temporally_applicable_statute", publishDraft: false },
@@ -422,7 +424,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
       const quality = assessEvidence({ sources, lang });
       const caseLaw = await caseLawTask;
       return res.json({
-        analysis: quality.message, quality, caseLaw, verification: null, citations: null, sources: [],
+        analysis: quality.message, quality, sessionFacts: sanitizeSessionFacts(docFacts), caseLaw, verification: null, citations: null, sources: [],
         agents: { sourceCheck: { kept: 0, dropped: checked.dropped } },
         disclaimer: lang === "en" ? "Information, not legal advice. Consult a lawyer."
           : "Πληροφόρηση, όχι νομική συμβουλή. Συμβουλευτείτε δικηγόρο.",
