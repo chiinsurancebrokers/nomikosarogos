@@ -90,7 +90,7 @@ export async function researchCaseLaw(anthropic, { query, searchText, area = "ci
     });
     const raw = (response.content || []).filter((p) => p.type === "text")
       .map((p) => p.text).join("\n");
-    return verifyCaseLawFindings(parseJson(raw), candidates, lang);
+    return verifyCaseLawFindings(parseJson(raw), candidates, lang, query);
   } catch (err) {
     console.error("case-law research unavailable:", err?.name || "error");
     return emptyCaseLawResult(lang, "unavailable");
