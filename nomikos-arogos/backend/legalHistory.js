@@ -128,7 +128,7 @@ export function selectHistoricalVersion({ question = "", docFacts = null, area =
 export function guardHistoricalSources(sources = [], selection = {}) {
   if (selection.status !== "selected") return { sources, excluded: 0 };
   const protectedRefs = new Set(selection.competingRefs.map(norm));
-  const keep = sources.filter((s) => !protectedRefs.has(norm(s.ref)));
+  const keep = sources.filter((s) => !protectedRefs.has(norm(s.ref)) && norm(s.ref) !== norm(selection.version.ref));
   return {
     sources: [{
       ref: selection.version.ref, anchored: true,
