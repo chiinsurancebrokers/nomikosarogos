@@ -70,9 +70,13 @@ export function extractDeathDates({ question = "", docFacts = null } = {}) {
       // A date must occur AFTER the death label. A nearby date of filing,
       // disclaimer or court service is not a death date.
       const following = text.slice(m.index + m[0].length, m.index + m[0].length + 56);
-      const date = parseGreekDate(following);
-      if (!date) continue;
       const preceding = text.slice(Math.max(0, m.index - 55), m.index);
+      // Greek legal documents very often use "Την DD.MM.YYYY, απεβίωσε ...".
+      // Only accept a PRECEDING date when it immediately and explicitly
+      // modifies the death verb; never borrow a separate procedural date.
+      const leading = /(?:την|στις?|on)\s+(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\s+[α-ωa-z]+\s+\d{4})\s*,?\s*$/u.exec(preceding);
+      const date = parseGreekDate(following) || (leading ? parseGreekDate(leading[1]) : null);
+      if (!date) continue;
       const subject = deathSubject(preceding + " " + m[0] + " " + following.slice(0, 28));
       matches.push({ date, source, subject });
     }
