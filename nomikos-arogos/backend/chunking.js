@@ -156,12 +156,14 @@ export function chunkDecisions(fullText) {
 // decision cites dozens of other decisions, and splitting there would label chunks with the wrong
 // number. Every chunk carries the decision's own reference; the first chunk also carries the source
 // URL so the answer can link to the official text.
-export function chunkDecisionDocument(fullText, decision, url = "") {
+export function chunkDecisionDocument(fullText, decision, url = "", publishedAt = "") {
   const text = (fullText || "").normalize("NFC").replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
   if (!text || !decision) return [];
   // Keep the official provenance URL on EVERY chunk, including continuation chunks.
   // Otherwise a semantic hit on page 2+ has no auditable reference in the final answer.
-  const source = url ? `Πηγή: ${url}\n` : "";
+  const source = url
+    ? `Πηγή: ${url}\n${publishedAt ? `Ημερομηνία δημοσίευσης απόφασης: ${publishedAt}\n` : ""}`
+    : "";
   if (source.length > 350) throw new Error("Court source URL too long");
   const limit = MAX_CHARS - source.length;
   const paras = text.split(/\n\n/);

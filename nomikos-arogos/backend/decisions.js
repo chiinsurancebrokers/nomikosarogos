@@ -14,7 +14,8 @@ import fs from "node:fs/promises";
 import { pool, initSchema } from "./db.js";
 import { embed, EMBED_MODEL } from "./embeddings.js";
 import { chunkDecisionDocument, looksGarbled } from "./chunking.js";
-import { validateDecisionManifestEntry, validateDecisionText } from "./decisionValidation.js";
+import { validateDecisionManifestEntry, validateDecisionText, candidateFromOfficialUrl } from "./decisionValidation.js";
+import { publicationDateAgent, decisionBodyAgent, provenanceAgent } from "./courtAgents.js";
 
 const ENTITIES = { "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&laquo;": "«", "&raquo;": "»" };
 
@@ -57,7 +58,11 @@ async function ingestOne(d) {
   const text = htmlToText(html).normalize("NFC");
   if (text.length < 1500 || looksGarbled(text)) throw new Error("page text too short or garbled — check charset/HTML");
   validateDecisionText(d, text); // reject an HTML error page or the WRONG decision
-  const rows = chunkDecisionDocument(text, entry.ref, entry.url);
+  // Source agents use the full decision body, not the site's headnotes or index.
+  const body = decisionBodyAgent(text, entry.ref);
+  const publication = publicationDateAgent(body);
+  const provenance = provenanceAgent({ url: entry.url, decisionRef: entry.ref, publishedAt: publication.publishedAt });
+  const rows = chunkDecisionDocument(body, entry.ref, entry.url, provenance.publishedAt);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -68,7 +73,7 @@ async function ingestOne(d) {
       const values = [];
       group.forEach((r, i) => {
         const b = i * 8;
-        params.push(`(${b + 1},${b + 2},${b + 3},${b + 4},${b + 5},${b + 6},${b + 7},${b + 8})`);
+        params.push("(" + Array.from({ length: 8 }, (_, j) => "$" + (b + j + 1)).join(",") + ")");
         values.push("decisions", d.court || "Άρειος Πάγος", d.area, null, r.decision, r.text, `[${vectors[i].join(",")}]`, "pending");
       });
       await client.query(
@@ -88,6 +93,24 @@ async function ingestOne(d) {
 
 async function main() {
   await initSchema();
+  // Admin-provided official URL: append one decision without scraping portal search listings.
+  const urlAt = process.argv.indexOf("--url");
+  if (urlAt >= 0) {
+    try {
+      const url = process.argv[urlAt + 1];
+      const areaAt = process.argv.indexOf("--area");
+      const area = areaAt >= 0 ? process.argv[areaAt + 1] : "";
+      const candidate = candidateFromOfficialUrl(url, area);
+      const count = await ingestOne(candidate);
+      console.log(candidate.ref + ": " + count + " chunks pending human review");
+    } catch (e) {
+      console.error("Official URL import rejected: " + e.message);
+      process.exitCode = 1;
+    } finally {
+      await pool.end();
+    }
+    return;
+  }
   const approveAt = process.argv.indexOf("--approve");
   const rejectAt = process.argv.indexOf("--reject");
   if (approveAt >= 0 || rejectAt >= 0) {

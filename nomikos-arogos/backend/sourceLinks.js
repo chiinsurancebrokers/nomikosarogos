@@ -9,7 +9,13 @@ export function buildSourceLinks(sources = []) {
     if (!m || links.has(s.ref)) continue;
     try {
       const checked = validateDecisionManifestEntry({ ref: s.ref, url: m[1], area: "civil" });
-      links.set(s.ref, { ref: s.ref, url: checked.url, publisher: "Άρειος Πάγος" });
+      const date = /^Ημερομηνία δημοσίευσης απόφασης:\s*(\d{4}-\d{2}-\d{2})$/mu.exec(String(s.text || ""));
+      // The court asks that both origin and publication date be cited.
+      if (!date) continue;
+      links.set(s.ref, {
+        ref: s.ref, url: checked.url, publisher: "Άρειος Πάγος",
+        publishedAt: date[1], informationalOnly: true,
+      });
     } catch { /* suppress invalid or untrusted links */ }
   }
   return [...links.values()];

@@ -317,9 +317,16 @@ function AssistantBubble({ msg, prevUserText, area, mode, lang }) {
           <div className="chips">{msg.sources.map((s, i) => {
             const link = msg.sourceLinks?.find((item) => item.ref === s);
             return link
-              ? <a key={i} className="chip" href={link.url} target="_blank" rel="noopener noreferrer" title={lang === "el" ? "Επίσημη πηγή — Άρειος Πάγος" : "Official source — Supreme Court"}>{s} ↗</a>
+              ? <a key={i} className="chip" href={link.url} target="_blank" rel="noopener noreferrer" title={lang === "el" ? "Επίσημη πηγή — Άρειος Πάγος" : "Official source — Supreme Court"}>{s} · {link.publishedAt} ↗</a>
               : <span key={i} className="chip">{s}</span>;
           })}</div>
+          {msg.sourceLinks?.length > 0 && (
+            <div className="current-note">
+              {lang === "el"
+                ? "Άρειος Πάγος: τα δημοσιευμένα ανωνυμοποιημένα κείμενα είναι πληροφοριακά και δεν αποτελούν νόμιμα και ακριβή αντίγραφα αποφάσεων."
+                : "Supreme Court: online anonymized decision texts are informational, not certified exact copies."}
+            </div>
+          )}
           {agents.currency?.current?.length > 0 && (
             <div className="current-note">
               {t.currentThrough}: {agents.currency.current.map((c) => `${c.code} — ${c.through}`).join(" · ")}
