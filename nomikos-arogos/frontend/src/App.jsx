@@ -23,6 +23,10 @@ const T = {
     placeholder: "Περιγράψτε με απλά λόγια τι συμβαίνει…",
     chatPlaceholder: "Γράψτε το μήνυμά σας…",
     lawyer: "Λειτουργία δικηγόρου (τεχνική ανάλυση)", citWarnT: "Παραπομπές σε νομολογία που δεν επαληθεύτηκαν",
+    caseLawToggle: "Έρευνα νομολογίας — υπέρ και κατά", caseLawTitle: "Έρευνα Νομολογίας",
+    caseLawThesis: "Εξεταζόμενο νομικό επιχείρημα", caseLawHolding: "Πιθανή νομική σημασία",
+    caseLawCompare: "Σύγκριση περιστατικών", caseLawLimit: "Όρια και αντίλογος",
+    caseLawPositions: { supports: "Υποστηρίζει", opposes: "Αντίκειται", distinguishable: "Διαφοροποιείται", uncertain: "Αβέβαιο" },
     citMissing: "Δεν υπάρχουν στις πηγές μου (πιθανώς ανακριβείς)", citSecond: "Αναφέρονται μόνο μέσα σε άλλη απόφαση (δεν διαβάστηκαν)",
     deep: "Εκτενής ανάλυση", attach: "Επισύναψη", remove: "Αφαίρεση",
     send: "Αποστολή", newChat: "Νέα συνομιλία", asking: "Αναζήτηση και έλεγχος πηγών",
@@ -66,6 +70,10 @@ const T = {
     placeholder: "Describe in plain words what is happening…",
     chatPlaceholder: "Type your message…",
     lawyer: "Lawyer mode (technical analysis)", citWarnT: "Case-law citations that could not be verified",
+    caseLawToggle: "Case-law research — supporting and adverse", caseLawTitle: "Case-law research",
+    caseLawThesis: "Legal proposition examined", caseLawHolding: "Possible legal significance",
+    caseLawCompare: "Comparison of facts", caseLawLimit: "Limits and counterargument",
+    caseLawPositions: { supports: "Supports", opposes: "Opposes", distinguishable: "Distinguishable", uncertain: "Uncertain" },
     citMissing: "Not in my sources (possibly inaccurate)", citSecond: "Only cited inside another decision (not read)",
     deep: "Extended analysis", attach: "Attach", remove: "Remove",
     send: "Send", newChat: "New conversation", asking: "Searching and checking sources",
@@ -275,6 +283,7 @@ function AssistantBubble({ msg, prevUserText, area, mode, lang }) {
       : `${t.agentSources}: ${t.sourcesKept(agents.sourceCheck.kept)}`);
   }
   if ("currency" in agents && !agents.intake) trail.push(t.agentCurrency);
+  if (msg.caseLaw?.findings?.length) trail.push(t.caseLawTitle);
 
   return (
     <div className="msg hal">
@@ -297,7 +306,38 @@ function AssistantBubble({ msg, prevUserText, area, mode, lang }) {
           <b>{lang === "el" ? "Όρια τεκμηρίωσης" : "Evidence limitations"}:</b> {msg.quality.message}
         </div>
       )}
+      {msg.temporal?.notice && (
+        <div className="callout">
+          <b>{lang === "el" ? "Εφαρμοστέο δίκαιο στον κρίσιμο χρόνο" : "Event-time applicable law"}</b>
+          <div>{msg.temporal.notice}</div>
+          {msg.temporal.sourceUrl && (
+            <a href={msg.temporal.sourceUrl} target="_blank" rel="noopener noreferrer">
+              {lang === "el" ? "Επίσημη κοινοποίηση άρθρου 41 ν. 5303/2026" : "Official statutory transition source"}
+            </a>
+          )}
+        </div>
+      )}
       <Markdown>{msg.content}</Markdown>
+
+      {msg.caseLaw && (
+        <section className="case-law-research" aria-label={t.caseLawTitle}>
+          <h3 className="case-law-title">{t.caseLawTitle}</h3>
+          {msg.caseLaw.thesis && <p className="case-law-thesis"><b>{t.caseLawThesis}:</b> {msg.caseLaw.thesis}</p>}
+          {msg.caseLaw.findings?.map((f) => (
+            <article className="case-law-entry" key={f.ref}>
+              <div className="case-law-entry-head">
+                <span className={`case-law-position ${f.position}`}>{t.caseLawPositions[f.position] || f.position}</span>
+                <a href={f.url} target="_blank" rel="noopener noreferrer">{f.ref} · {f.publishedAt} ↗</a>
+              </div>
+              <p><b>{t.caseLawHolding}:</b> {f.holding}</p>
+              <blockquote>{f.quote}</blockquote>
+              <p><b>{t.caseLawCompare}:</b> {f.comparison}</p>
+              <p><b>{t.caseLawLimit}:</b> {f.limitation}</p>
+            </article>
+          ))}
+          <p className="case-law-note">{msg.caseLaw.message}</p>
+        </section>
+      )}
 
       {(msg.citations?.missing?.length > 0 || msg.citations?.secondhand?.length > 0) && (
         <div className="callout warn">
@@ -380,6 +420,7 @@ function MainApp({ lang, setLang, onSignOut }) {
   const [input, setInput] = useState("");
   const [mode, setMode] = useState("quick");
   const [audience, setAudience] = useState("citizen");
+  const [caseLawResearch, setCaseLawResearch] = useState(false);
   const [docFile, setDocFile] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -416,7 +457,7 @@ function MainApp({ lang, setLang, onSignOut }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           messages: history.map((m) => ({ role: m.role, content: m.content })),
-          area, lang, mode, audience, document,
+          area, lang, mode, audience, caseLawResearch, document,
         }),
       });
       if (res.status === 401) setError(t.authExpired);
@@ -426,7 +467,7 @@ function MainApp({ lang, setLang, onSignOut }) {
         const data = await res.json();
         setMessages((prev) => [...prev, {
           role: "assistant", content: data.analysis, sources: data.sources,
-          verification: data.verification, citations: data.citations, quality: data.quality, sourceLinks: data.sourceLinks, disclaimer: data.disclaimer, agents: data.agents,
+          verification: data.verification, citations: data.citations, quality: data.quality, temporal: data.temporal, sourceLinks: data.sourceLinks, caseLaw: data.caseLaw, disclaimer: data.disclaimer, agents: data.agents,
         }]);
       }
     } catch { setError(t.err); }
@@ -559,6 +600,10 @@ function MainApp({ lang, setLang, onSignOut }) {
                 <input type="checkbox" checked={audience === "lawyer"} onChange={(e) => setAudience(e.target.checked ? "lawyer" : "citizen")} />
                 <span>{t.lawyer}</span>
               </label>
+              <label className="deep-toggle" title={lang === "el" ? "Μόνο αποφάσεις εγκεκριμένες στη νομική βάση, με τεκμηριωμένη πηγή" : "Only decisions approved in the legal index, with verified source attribution"}>
+                <input type="checkbox" checked={caseLawResearch} onChange={(e) => setCaseLawResearch(e.target.checked)} />
+                <span>{t.caseLawToggle}</span>
+              </label>
             </div>
           </div>
         </div>
@@ -664,6 +709,17 @@ button{font-family:inherit}
 .md table{border-collapse:collapse;font-size:13px;margin:8px 0}
 .md th,.md td{border:1px solid var(--border);padding:5px 8px;text-align:left}
 
+.case-law-research{margin-top:16px;padding:12px;border:1px solid var(--border);border-radius:12px;background:#f8fafc}
+.case-law-title{font-size:14px;margin:0 0 10px;color:var(--navy)}
+.case-law-thesis,.case-law-note{font-size:12px;color:var(--muted);line-height:1.5;margin:6px 0 10px}
+.case-law-entry{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:10px 0}
+.case-law-entry p{margin:7px 0;font-size:12.5px;line-height:1.55}
+.case-law-entry-head{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;font-size:12px}
+.case-law-entry-head a{color:var(--accent);font-size:12px;font-weight:600;overflow-wrap:anywhere}
+.case-law-position{font-weight:700;font-size:11px;color:var(--muted)}
+.case-law-position.supports{color:var(--good)} .case-law-position.opposes{color:var(--bad)}
+.case-law-position.distinguishable,.case-law-position.uncertain{color:var(--warn)}
+.case-law-entry blockquote{margin:9px 0;padding:8px 11px;border-left:3px solid var(--accent);background:var(--accent-soft);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
 .agent-trail{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
 .agent-chip{background:#eaf7ef;color:var(--good);border-radius:999px;padding:3px 9px;font-size:10.5px;font-weight:700}
 .doc-facts{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:12.5px}
