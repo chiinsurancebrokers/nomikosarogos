@@ -135,7 +135,8 @@ test("server uses the actual hard source gate before producing legal answer", ()
   const server = readFileSync(new URL("../server.js", import.meta.url), "utf8");
   assert.match(server, /determineInheritanceLaw\(\{ question: userText, docFacts \}\)/);
   assert.match(server, /fetchInheritanceArticle\(temporal\)/);
-  assert.match(server, /const preGuard = guardInheritanceSources\(\[\.\.\.historicArticle, \.\.\.retrieved\], temporal\)/);
+  assert.match(server, /const preHistory = guardHistoricalSources\(retrieved, historical\)/);
+  assert.match(server, /const preGuard = guardInheritanceSources\(\[\.\.\.historicArticle, \.\.\.preHistory\.sources\], temporal\)/);
   assert.match(server, /sourceChecker\(anthropic, \{ query, sources: preGuard\.sources \}\)/);
   assert.match(server, /guardInheritanceSources\(checked\.sources, temporal\)/);
   assert.match(server, /missing_temporally_applicable_statute/);
