@@ -21,6 +21,7 @@ import { requiresIndependentReview, assessEvidence } from "./quality.js";
 import { requireAuth } from "./auth.js";
 import { classifyCitations } from "./citations.js";
 import { buildSourceLinks } from "./sourceLinks.js";
+import { researchCaseLaw } from "./caseLawResearch.js";
 import { pool, ensureFeedbackSchema, ensureFeederSchema } from "./db.js";
 import {
   documentAgent, docFactsBlock, intakeAgent, intakeReply, sourceChecker, currencyAgent,
@@ -301,7 +302,8 @@ async function verifyWithOpenAI({ analysis, sources, lang }) {
 // ── Endpoint ──────────────────────────────────────────────────────────────────
 app.post("/api/analyze", requireAuth, async (req, res) => {
   try {
-    const { messages, question = "", area = "unsure", lang = "el", mode = "quick", audience: rawAudience, document = null } = req.body || {};
+    const { messages, question = "", area = "unsure", lang = "el", mode = "quick", audience: rawAudience, document = null, caseLawResearch: rawCaseLaw = false } = req.body || {};
+    const caseLawRequested = rawCaseLaw === true;
     const audience = rawAudience === "lawyer" ? "lawyer" : "citizen";
 
     // Accept a full thread; fall back to a single question for backward compatibility.
@@ -347,24 +349,33 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
     // Agent 3: drop retrieved articles that do not bear on the question.
     const checked = await sourceChecker(anthropic, { query, sources: retrieved });
     const sources = checked.sources;
+    // Separate research branch uses only human-approved decisions with official provenance.
+    // It may return verified excerpts even when a complete statutory analysis is unavailable.
+    const caseLawTask = caseLawRequested
+      ? researchCaseLaw(anthropic, { query, searchText, area, lang })
+      : Promise.resolve(null);
 
     // Do not generate a source-grounded legal analysis from model memory alone.
     if (!sources.length) {
       const quality = assessEvidence({ sources, lang });
+      const caseLaw = await caseLawTask;
       return res.json({
-        analysis: quality.message, quality, verification: null, citations: null, sources: [],
+        analysis: quality.message, quality, caseLaw, verification: null, citations: null, sources: [],
         agents: { sourceCheck: { kept: 0, dropped: checked.dropped } },
         disclaimer: lang === "en" ? "Information, not legal advice. Consult a lawyer."
           : "Πληροφόρηση, όχι νομική συμβουλή. Συμβουλευτείτε δικηγόρο.",
       });
     }
 
-    const analysis = await analyzeWithClaude({
-      history, area, lang, mode, audience, document, sources, docFacts: docFactsBlock(docFacts),
-    });
+    const [analysis, caseLaw] = await Promise.all([
+      analyzeWithClaude({
+        history, area, lang, mode, audience, document, sources, docFacts: docFactsBlock(docFacts),
+      }),
+      caseLawTask,
+    ]);
 
     // Documents, proceedings, dates and lawyer mode ALWAYS get independent review.
-    const reviewRequested = mode === "deep" || audience === "lawyer" || requiresIndependentReview(userText, hasDocument);
+    const reviewRequested = mode === "deep" || audience === "lawyer" || caseLawRequested || requiresIndependentReview(userText, hasDocument);
     const [currency, verification] = await Promise.all([
       currencyAgent(anthropic, { answer: analysis, sources, lang }),
       reviewRequested ? verifyWithOpenAI({ analysis, sources, lang }) : Promise.resolve(null),
@@ -376,6 +387,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
     res.json({
       analysis: quality.publishDraft ? analysis : quality.message,
       quality,
+      caseLaw,
       verification,
       citations: citations.missing.length || citations.secondhand.length ? citations : null,
       sourceLinks: buildSourceLinks(sources),
