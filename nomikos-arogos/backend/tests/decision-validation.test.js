@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { validateDecisionManifestEntry, validateDecisionText } from "../decisionValidation.js";
+import { validateDecisionManifestEntry, validateDecisionText, candidateFromOfficialUrl } from "../decisionValidation.js";
 import { buildSourceLinks } from "../sourceLinks.js";
 import { chunkDecisionDocument } from "../chunking.js";
 
@@ -45,4 +45,13 @@ test("only a verified retrieved primary-source link becomes clickable", () => {
     { ref: example.ref, text: "Πηγή: https://evil.test/nomologia/apofaseis_DISPLAY.asp?apof=1497_2023\nΚείμενο" },
   ]);
   assert.deepEqual(bad, []);
+});
+
+test("ad-hoc URL intake accepts one official decision and rejects unsafe origins", () => {
+  assert.deepEqual(candidateFromOfficialUrl(example.url, "civil"), {
+    ref: example.ref, court: "Άρειος Πάγος", area: "civil", url: example.url,
+  });
+  assert.throws(() => candidateFromOfficialUrl("https://malicious.example/nomologia/apofaseis_DISPLAY.asp?apof=1497_2023", "civil"));
+  assert.throws(() => candidateFromOfficialUrl(example.url, "admin"));
+  assert.throws(() => candidateFromOfficialUrl("https://www.areiospagos.gr/nomologia/apofaseis.asp", "civil"));
 });
