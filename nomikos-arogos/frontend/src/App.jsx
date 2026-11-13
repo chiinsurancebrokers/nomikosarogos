@@ -539,6 +539,11 @@ function MainApp({ lang, setLang, onSignOut }) {
                 <span>{t.courtsT}:</span>
                 {COURTS.map(([n, u]) => <a key={n} href={u} target="_blank" rel="noreferrer">{n}</a>)}
               </div>
+              <p className="info-body" style={{ fontSize: 12, opacity: 0.8 }}>
+                {lang === "el"
+                  ? "Οι σύνδεσμοι είναι για ανεξάρτητη αναφορά, όχι ένδειξη ζωντανής σύνδεσης. Η αναζήτηση χρησιμοποιεί μόνο ευρετηριασμένες πηγές της εφαρμογής· νομολογία εμφανίζεται μόνο εφόσον έχει επαληθευτεί και εγκριθεί. Η επικαιρότητα των κειμένων δεν πιστοποιείται."
+                  : "These are reference links, not live integrations. Search uses only the application's indexed sources; case law is shown only when verified and approved. Legal currency is not certified."}
+              </p>
             </div>
           )}
         </LeftPanel>
