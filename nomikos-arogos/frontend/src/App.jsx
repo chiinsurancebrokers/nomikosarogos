@@ -306,6 +306,17 @@ function AssistantBubble({ msg, prevUserText, area, mode, lang }) {
           <b>{lang === "el" ? "Όρια τεκμηρίωσης" : "Evidence limitations"}:</b> {msg.quality.message}
         </div>
       )}
+      {msg.temporal?.notice && (
+        <div className="callout">
+          <b>{lang === "el" ? "Εφαρμοστέο δίκαιο στον κρίσιμο χρόνο" : "Event-time applicable law"}</b>
+          <div>{msg.temporal.notice}</div>
+          {msg.temporal.sourceUrl && (
+            <a href={msg.temporal.sourceUrl} target="_blank" rel="noopener noreferrer">
+              {lang === "el" ? "Επίσημη κοινοποίηση άρθρου 41 ν. 5303/2026" : "Official statutory transition source"}
+            </a>
+          )}
+        </div>
+      )}
       <Markdown>{msg.content}</Markdown>
 
       {msg.caseLaw && (
@@ -456,7 +467,7 @@ function MainApp({ lang, setLang, onSignOut }) {
         const data = await res.json();
         setMessages((prev) => [...prev, {
           role: "assistant", content: data.analysis, sources: data.sources,
-          verification: data.verification, citations: data.citations, quality: data.quality, sourceLinks: data.sourceLinks, caseLaw: data.caseLaw, disclaimer: data.disclaimer, agents: data.agents,
+          verification: data.verification, citations: data.citations, quality: data.quality, temporal: data.temporal, sourceLinks: data.sourceLinks, caseLaw: data.caseLaw, disclaimer: data.disclaimer, agents: data.agents,
         }]);
       }
     } catch { setError(t.err); }
