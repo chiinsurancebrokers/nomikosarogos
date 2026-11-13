@@ -77,7 +77,8 @@ export function extractDeathDates({ question = "", docFacts = null } = {}) {
       const leading = /(?:την|στις?|on)\s+(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\s+[α-ωa-z]+\s+\d{4})\s*,?\s*$/u.exec(preceding);
       const date = parseGreekDate(following) || (leading ? parseGreekDate(leading[1]) : null);
       if (!date) continue;
-      const subject = deathSubject(preceding + " " + m[0] + " " + following.slice(0, 28));
+      const localFollowing = following.split(/[.!?;]\s+/u, 1)[0].slice(0, 32);
+      const subject = deathSubject(preceding + " " + m[0] + " " + localFollowing);
       matches.push({ date, source, subject });
     }
   };
