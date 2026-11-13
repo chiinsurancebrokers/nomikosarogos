@@ -49,34 +49,56 @@ const SUCCESSION = /κληρονομ|κληρονομικ|αποποι|inherit|s
 // The scope matters. These questions need Art.33 exceptions to the general Art.41 rule.
 const SPECIAL = /διανομ|κληρονομητηρ|εκτελεστ.{0,15}διαθηκ|ιδιογραφ.{0,15}διαθηκ|απογραφ|distribution of estate|inheritance certificate/u;
 
+// Distinguish the person whose estate is examined from collateral relatives.
+// In multi-generation inheritance files there may be several REAL death dates:
+// they are not necessarily conflicting dates for the same person.
+function deathSubject(context = "") {
+  const t = norm(context);
+  if (/αδελφ|συζυγ|μητερ|πατερ|παππου|γιαγια|τεκν|γονε|προαποβιω|brother|sister|father|mother|spouse/.test(t))
+    return "collateral";
+  if (/κληρονομουμεν|κληρονομουμ|θανουσ|κληρονομια.{0,16}της|decedent|deceased estate owner|estate owner/.test(t))
+    return "primary";
+  return "unspecified";
+}
+
 export function extractDeathDates({ question = "", docFacts = null } = {}) {
   const matches = [];
   const scan = (value, source) => {
     const text = norm(value);
     const re = new RegExp(DEATH_LABEL.source, "gu");
     for (const m of text.matchAll(re)) {
-      // Only a date close to a DEATH label. Do not confuse the date of disclaimer,
-      // lawsuit filing, service or hearing with the date of death.
+      // A date must occur AFTER the death label. A nearby date of filing,
+      // disclaimer or court service is not a death date.
       const following = text.slice(m.index + m[0].length, m.index + m[0].length + 56);
-      // Do not borrow a preceding procedural date (disclaimer/filing/service)
-      // when the death date itself is missing from the text.
       const date = parseGreekDate(following);
-      if (date) matches.push({ date, source });
+      if (!date) continue;
+      const preceding = text.slice(Math.max(0, m.index - 55), m.index);
+      const subject = deathSubject(preceding + " " + m[0] + " " + following.slice(0, 28));
+      matches.push({ date, source, subject });
     }
   };
   scan(question, "question");
   if (docFacts) {
     for (const d of docFacts.dates || []) {
-      if (DEATH_LABEL.test(norm(d.label))) {
-        const date = parseGreekDate(d.date);
-        if (date) matches.push({ date, source: "document_facts" });
-      }
+      if (!DEATH_LABEL.test(norm(d.label))) continue;
+      const date = parseGreekDate(d.date);
+      if (date) matches.push({
+        date, source: "document_facts", subject: deathSubject(d.label),
+      });
     }
     scan(docFacts.summary, "document_summary");
-    // Key facts can mention dates without a structured dates[] entry.
     for (const item of docFacts.keyFacts || []) scan(item, "document_fact");
   }
-  const unique = [...new Set(matches.map((x) => x.date))];
+
+  const principal = matches.filter((x) => x.subject === "primary");
+  const neutral = matches.filter((x) => x.subject === "unspecified");
+  // Where a principal estate owner is identified, retain user-asserted,
+  // unspecified death dates as a conflict check. Ignore collateral relatives.
+  // In the absence of a principal, never silently choose one among several.
+  const applicable = principal.length
+    ? [...principal, ...neutral.filter((x) => x.source === "question")]
+    : neutral;
+  const unique = [...new Set(applicable.map((x) => x.date))];
   return { dates: unique, evidence: matches };
 }
 
