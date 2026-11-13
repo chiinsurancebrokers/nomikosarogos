@@ -47,7 +47,7 @@ test("provenance agent requires official source and publication date", () => {
   const meta = provenanceAgent({ decisionRef: ref, url, publishedAt: "2023-10-04" });
   assert.equal(meta.publishedAt, "2023-10-04");
   assert.match(meta.notice, /πληροφοριακό χαρακτήρα/);
-  assert.match(COURT_NOTICE_EL, /δεν αναδημοσιεύονται/);
+  assert.match(COURT_NOTICE_EL, /Δεν αναδημοσιεύονται/);
   assert.throws(() => provenanceAgent({ decisionRef: ref, url, publishedAt: null }));
   assert.throws(() => provenanceAgent({ decisionRef: ref, url: "https://evil.test/case", publishedAt: "2023-10-04" }));
 });
@@ -65,5 +65,6 @@ test("decision indexer uses proper SQL bind markers and all three agents", () =>
   assert.match(code, /publicationDateAgent\(body\)/);
   assert.match(code, /decisionBodyAgent\(text, entry\.ref\)/);
   assert.match(code, /provenanceAgent\(\{ url: entry\.url/);
-  assert.match(code, /params\.push\(\`\(\$\$\{b \+ 1\},\$\$\{b \+ 2\}/);
+  assert.ok(code.includes('Array.from({ length: 8 }'));
+  assert.ok(code.includes('"$" + (b + j + 1)'));
 });
