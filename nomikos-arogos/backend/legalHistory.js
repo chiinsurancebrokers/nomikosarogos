@@ -160,3 +160,20 @@ export function historyStatusMessage(state, lang = "el") {
   };
   return messages[state.status] || null;
 }
+
+
+export function assessHistoricalDraft(analysis, selection, lang = "el") {
+  if (selection.status !== "selected") return null;
+  // Reject vague drafts that do not name the exact verified historical
+  // version. A source-only LLM review cannot independently prove currency.
+  const text = norm(analysis);
+  if (!text.includes(norm(selection.version.ref))) {
+    return {
+      status: "wrong_historical_version", publishDraft: false,
+      message: lang === "en"
+        ? "The draft omitted the verified historical legal text reference and was withheld."
+        : "Το σχέδιο δεν αναφέρει ρητά την επιλεγμένη ιστορική διάταξη και αποκρύπτεται.",
+    };
+  }
+  return null;
+}
