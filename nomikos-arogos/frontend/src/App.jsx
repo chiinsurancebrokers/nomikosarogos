@@ -314,7 +314,12 @@ function AssistantBubble({ msg, prevUserText, area, mode, lang }) {
       {msg.sources?.length > 0 && (
         <div className="src-block">
           <div className="small-title">{t.sourcesT}</div>
-          <div className="chips">{msg.sources.map((s, i) => <span key={i} className="chip">{s}</span>)}</div>
+          <div className="chips">{msg.sources.map((s, i) => {
+            const link = msg.sourceLinks?.find((item) => item.ref === s);
+            return link
+              ? <a key={i} className="chip" href={link.url} target="_blank" rel="noopener noreferrer" title={lang === "el" ? "Επίσημη πηγή — Άρειος Πάγος" : "Official source — Supreme Court"}>{s} ↗</a>
+              : <span key={i} className="chip">{s}</span>;
+          })}</div>
           {agents.currency?.current?.length > 0 && (
             <div className="current-note">
               {t.currentThrough}: {agents.currency.current.map((c) => `${c.code} — ${c.through}`).join(" · ")}
@@ -414,7 +419,7 @@ function MainApp({ lang, setLang, onSignOut }) {
         const data = await res.json();
         setMessages((prev) => [...prev, {
           role: "assistant", content: data.analysis, sources: data.sources,
-          verification: data.verification, citations: data.citations, quality: data.quality, disclaimer: data.disclaimer, agents: data.agents,
+          verification: data.verification, citations: data.citations, quality: data.quality, sourceLinks: data.sourceLinks, disclaimer: data.disclaimer, agents: data.agents,
         }]);
       }
     } catch { setError(t.err); }
