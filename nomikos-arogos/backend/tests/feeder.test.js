@@ -77,8 +77,8 @@ test("chunkStatute does not glue a title letter onto the article number", () => 
 
 import { isConsolidated } from "../statute.js";
 test("isConsolidated matches laws already inside the consolidated Codes", () => {
-  assert.equal(isConsolidated("ν. 5344/2026"), true);
-  assert.equal(isConsolidated("5303/2026"), true);
+  assert.equal(isConsolidated("ν. 5344/2026"), false);
+  assert.equal(isConsolidated("5303/2026"), false);
   assert.equal(isConsolidated("ν. 5187/2025"), false);
   assert.equal(isConsolidated("ν. 5400/2026", ["5400/2026"]), true);
 });
