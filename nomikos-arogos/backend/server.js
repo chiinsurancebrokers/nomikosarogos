@@ -22,6 +22,8 @@ import { requireAuth } from "./auth.js";
 import { classifyCitations } from "./citations.js";
 import { buildSourceLinks } from "./sourceLinks.js";
 import { researchCaseLaw } from "./caseLawResearch.js";
+import { determineInheritanceLaw, guardInheritanceSources, assessTemporalDraft, temporalNotice, INHERITANCE_REFORM } from "./temporalLaw.js";
+import { fetchInheritanceArticle } from "./applicableLawSource.js";
 import { pool, ensureFeedbackSchema, ensureFeederSchema } from "./db.js";
 import {
   documentAgent, docFactsBlock, intakeAgent, intakeReply, sourceChecker, currencyAgent,
@@ -147,7 +149,7 @@ Use these sections (omit one only if it truly does not apply):
 End with a short list "Not verified" naming every statute, amendment, date or decision you could not confirm from the sources.`;
 
 // ── 2. System prompt (grounded) ──────────────────────────────────────────────
-function buildSystemPrompt(lang, area, sources, docFacts = "", audience = "citizen") {
+function buildSystemPrompt(lang, area, sources, docFacts = "", audience = "citizen", temporal = null) {
   const replyLang = lang === "en" ? "English" : "Greek";
   const areaName =
     area === "civil"
@@ -205,7 +207,7 @@ EXAMPLE of case (B) — clarify instead of guessing (do not copy the wording; ma
 User: «Θέλω να μάθω για την εγγύηση.»
 Good response: a warm one-line opening, then: «Για να βρω τον σωστό νόμο χρειάζομαι μια διευκρίνιση — εννοείτε την εγγύηση (εγγυοδοσία) σε μίσθωση κατοικίας, την εγγύηση/εγγυητή σε δάνειο, ή την εγγύηση καλής εκτέλεσης σε σύμβαση;» — then stop and wait. (Reason: «εγγύηση» maps to different articles per sense; guessing would cite the wrong law.)
 
-${audience === "lawyer" ? LAWYER_BLOCK + "\n\n" : ""}${docFacts ? `FACTS EXTRACTED FROM THE USER'S DOCUMENT (by a separate reader; treat as the user's situation, not as law):\n${docFacts}\n\n` : ""}RETRIEVED SOURCES:
+${temporal?.applicableArticle ? `DETERMINISTIC EVENT-TIME LAW SELECTION: date of death ${temporal.deathDate}; apply ${temporal.applicableArticle}; transition ${INHERITANCE_REFORM.sourceRef}; do not substitute the opposite version or its article number. Explicit exceptions in Article 33 must be separately considered.\n\n` : ""}${audience === "lawyer" ? LAWYER_BLOCK + "\n\n" : ""}${docFacts ? `FACTS EXTRACTED FROM THE USER'S DOCUMENT (by a separate reader; treat as the user's situation, not as law):\n${docFacts}\n\n` : ""}RETRIEVED SOURCES:
 ${sourceBlock}`;
 }
 
@@ -343,12 +345,44 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
     const userText = history.filter((m) => m.role === "user").map((m) => m.content).join("\n");
     const query = [userText, docFacts?.summary, (docFacts?.searchTerms || []).join(", ")]
       .filter(Boolean).join("\n") || "document";
+    const temporal = determineInheritanceLaw({ question: userText, docFacts });
+    // A renunciation case cannot be assessed without its triggering death date.
+    if (temporal.issue === "renunciation_annulment" &&
+        ["date_required", "conflicting_death_dates"].includes(temporal.status)) {
+      return res.json({
+        analysis: temporalNotice(temporal, lang),
+        temporal: { status: temporal.status, issue: temporal.issue, dates: temporal.dates },
+        quality: { status: "temporal_date_required", publishDraft: false },
+        sources: [], verification: null, citations: null, sourceLinks: [], caseLaw: null,
+        agents: { temporalLaw: { status: temporal.status } },
+        disclaimer: lang === "en" ? "Information, not legal advice." : "Πληροφόρηση, όχι νομική συμβουλή.",
+      });
+    }
     const searchText = await expandQuery(query, area); // lay wording → legal concepts
     const retrieved = await retrieveSources(searchText, area);
 
     // Agent 3: drop retrieved articles that do not bear on the question.
     const checked = await sourceChecker(anthropic, { query, sources: retrieved });
-    const sources = checked.sources;
+    const historicArticle = await fetchInheritanceArticle(temporal);
+    const rawSources = [...historicArticle, ...checked.sources];
+    const guarded = guardInheritanceSources(rawSources, temporal);
+    const sources = guarded.sources;
+    if (temporal.issue === "renunciation_annulment" && !guarded.foundApplicableArticle) {
+      const msg = lang === "en"
+        ? "I identified the applicable inheritance-law version but cannot retrieve its verified article text. Legal analysis is withheld."
+        : "Εντοπίστηκε το εφαρμοστέο κληρονομικό καθεστώς, αλλά δεν ανακτήθηκε το αντίστοιχο επαληθευμένο άρθρο του ΑΚ. Η νομική ανάλυση αποκρύπτεται.";
+      return res.json({
+        analysis: msg, temporal: { status: temporal.status, issue: temporal.issue,
+          deathDate: temporal.deathDate, applicableArticle: temporal.applicableArticle,
+          sourceUrl: INHERITANCE_REFORM.officialUrl },
+        quality: { status: "missing_temporally_applicable_statute", publishDraft: false },
+        sources: [INHERITANCE_REFORM.sourceRef], verification: null, citations: null,
+        sourceLinks: [], caseLaw: null,
+        agents: { temporalLaw: { status: temporal.status, applicableArticle: temporal.applicableArticle },
+          sourceCheck: { kept: sources.length, dropped: checked.dropped + guarded.excluded } },
+        disclaimer: lang === "en" ? "Information, not legal advice." : "Πληροφόρηση, όχι νομική συμβουλή.",
+      });
+    }
     // Separate research branch uses only human-approved decisions with official provenance.
     // It may return verified excerpts even when a complete statutory analysis is unavailable.
     const caseLawTask = caseLawRequested
@@ -369,31 +403,35 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
 
     const [analysis, caseLaw] = await Promise.all([
       analyzeWithClaude({
-        history, area, lang, mode, audience, document, sources, docFacts: docFactsBlock(docFacts),
+        history, area, lang, mode, audience, document, sources, docFacts: docFactsBlock(docFacts), temporal,
       }),
       caseLawTask,
     ]);
 
     // Documents, proceedings, dates and lawyer mode ALWAYS get independent review.
-    const reviewRequested = mode === "deep" || audience === "lawyer" || caseLawRequested || requiresIndependentReview(userText, hasDocument);
+    const reviewRequested = mode === "deep" || audience === "lawyer" || caseLawRequested || temporal.status !== "not_applicable" || requiresIndependentReview(userText, hasDocument);
     const [currency, verification] = await Promise.all([
       currencyAgent(anthropic, { answer: analysis, sources, lang }),
       reviewRequested ? verifyWithOpenAI({ analysis, sources, lang }) : Promise.resolve(null),
     ]);
 
     const citations = classifyCitations(analysis, sources);
-    const quality = assessEvidence({ sources, verification, reviewRequested, citations, lang });
+    const quality = assessTemporalDraft(analysis, temporal) || assessEvidence({ sources, verification, reviewRequested, citations, lang });
 
     res.json({
       analysis: quality.publishDraft ? analysis : quality.message,
       quality,
+      temporal: temporal.status === "not_applicable" ? null : { status: temporal.status, issue: temporal.issue,
+        deathDate: temporal.deathDate, applicableArticle: temporal.applicableArticle,
+        sourceUrl: INHERITANCE_REFORM.officialUrl, notice: temporalNotice(temporal, lang) },
       caseLaw,
       verification,
       citations: citations.missing.length || citations.secondhand.length ? citations : null,
       sourceLinks: buildSourceLinks(sources),
       sources: [...new Set(sources.map((s) => s.ref))], // unique labels; never echo full source text back wholesale
       agents: {
-        sourceCheck: { kept: sources.length, dropped: checked.dropped },
+        sourceCheck: { kept: sources.length, dropped: checked.dropped + guarded.excluded },
+        temporalLaw: temporal.status !== "not_applicable" ? { status: temporal.status, applicableArticle: temporal.applicableArticle } : null,
         currency: currency.notice || currency.current?.length ? { notice: currency.notice, current: currency.current } : null,
         document: docFacts
           ? { docType: docFacts.docType, summary: docFacts.summary, keyFacts: docFacts.keyFacts, dates: docFacts.dates, deadlines: docFacts.deadlines }
