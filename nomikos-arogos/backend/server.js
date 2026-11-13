@@ -24,6 +24,8 @@ import { buildSourceLinks } from "./sourceLinks.js";
 import { researchCaseLaw } from "./caseLawResearch.js";
 import { determineInheritanceLaw, guardInheritanceSources, assessTemporalDraft, temporalNotice, INHERITANCE_REFORM } from "./temporalLaw.js";
 import { fetchInheritanceArticle } from "./applicableLawSource.js";
+import { selectHistoricalVersion, guardHistoricalSources, historyStatusMessage, assessHistoricalDraft } from "./legalHistory.js";
+import { ensureLegalHistorySchema, loadApprovedLegalHistory } from "./legalHistoryStore.js";
 import { pool, ensureFeedbackSchema, ensureFeederSchema } from "./db.js";
 import {
   documentAgent, docFactsBlock, intakeAgent, intakeReply, sourceChecker, currencyAgent,
@@ -149,7 +151,7 @@ Use these sections (omit one only if it truly does not apply):
 End with a short list "Not verified" naming every statute, amendment, date or decision you could not confirm from the sources.`;
 
 // ── 2. System prompt (grounded) ──────────────────────────────────────────────
-function buildSystemPrompt(lang, area, sources, docFacts = "", audience = "citizen", temporal = null) {
+function buildSystemPrompt(lang, area, sources, docFacts = "", audience = "citizen", temporal = null, historical = null) {
   const replyLang = lang === "en" ? "English" : "Greek";
   const areaName =
     area === "civil"
@@ -207,7 +209,7 @@ EXAMPLE of case (B) — clarify instead of guessing (do not copy the wording; ma
 User: «Θέλω να μάθω για την εγγύηση.»
 Good response: a warm one-line opening, then: «Για να βρω τον σωστό νόμο χρειάζομαι μια διευκρίνιση — εννοείτε την εγγύηση (εγγυοδοσία) σε μίσθωση κατοικίας, την εγγύηση/εγγυητή σε δάνειο, ή την εγγύηση καλής εκτέλεσης σε σύμβαση;» — then stop and wait. (Reason: «εγγύηση» maps to different articles per sense; guessing would cite the wrong law.)
 
-${temporal?.applicableArticle ? `DETERMINISTIC EVENT-TIME LAW SELECTION: date of death ${temporal.deathDate}; apply ${temporal.applicableArticle}; transition ${INHERITANCE_REFORM.sourceRef}; do not substitute the opposite version or its article number. Explicit exceptions in Article 33 must be separately considered.\n\n` : ""}${audience === "lawyer" ? LAWYER_BLOCK + "\n\n" : ""}${docFacts ? `FACTS EXTRACTED FROM THE USER'S DOCUMENT (by a separate reader; treat as the user's situation, not as law):\n${docFacts}\n\n` : ""}RETRIEVED SOURCES:
+${historical?.status === "selected" ? `APPROVED HISTORICAL LAW REGISTRY: the legally relevant event is ${historical.eventType} on ${historical.eventDate}. The applicable verified historical text is ${historical.version.ref} (source: ${historical.version.sourceUrl}). Do NOT substitute the current wording or an unapproved version. Quote this exact reference.\n\n` : ""}${temporal?.applicableArticle ? `DETERMINISTIC EVENT-TIME LAW SELECTION: date of death ${temporal.deathDate}; apply ${temporal.applicableArticle}; transition ${INHERITANCE_REFORM.sourceRef}; do not substitute the opposite version or its article number. Explicit exceptions in Article 33 must be separately considered.\n\n` : ""}${audience === "lawyer" ? LAWYER_BLOCK + "\n\n" : ""}${docFacts ? `FACTS EXTRACTED FROM THE USER'S DOCUMENT (by a separate reader; treat as the user's situation, not as law):\n${docFacts}\n\n` : ""}RETRIEVED SOURCES:
 ${sourceBlock}`;
 }
 
@@ -238,7 +240,7 @@ function buildUserContent({ question, document }) {
 }
 
 // ── 4. Claude analysis over the full conversation ────────────────────────────
-async function analyzeWithClaude({ history, area, lang, mode, audience = "citizen", document, sources, docFacts, temporal = null }) {
+async function analyzeWithClaude({ history, area, lang, mode, audience = "citizen", document, sources, docFacts, temporal = null, historical = null }) {
   const model = mode === "deep" || audience === "lawyer" ? CLAUDE_DEEP_MODEL : CLAUDE_QUICK_MODEL;
 
   // Map the thread to Anthropic messages (must start with 'user' and alternate).
@@ -264,7 +266,7 @@ async function analyzeWithClaude({ history, area, lang, mode, audience = "citize
     model,
     max_tokens: mode === "deep" || audience === "lawyer" ? 8000 : 4000,
     // Note: Opus 4.7+ rejects temperature/top_p — so we don't set them.
-    system: buildSystemPrompt(lang, area, sources, docFacts, audience, temporal),
+    system: buildSystemPrompt(lang, area, sources, docFacts, audience, temporal, historical),
     messages,
   });
   return (msg.content || [])
@@ -358,16 +360,37 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
         disclaimer: lang === "en" ? "Information, not legal advice." : "Πληροφόρηση, όχι νομική συμβουλή.",
       });
     }
+    // Generic registry is independent of the specialised inheritance guard.
+    // Only a human-approved rule + one intact historical version can select law.
+    await legalHistoryReady;
+    const { rules, versions } = await loadApprovedLegalHistory();
+    const historical = temporal.status === "not_applicable"
+      ? selectHistoricalVersion({ question: userText, docFacts, area, rules, versions })
+      : { status: "not_covered" };
+    if (!["not_covered", "selected"].includes(historical.status)) {
+      const msg = historyStatusMessage(historical, lang);
+      return res.json({
+        analysis: msg,
+        historical: { status: historical.status, topic: historical.topic,
+          eventType: historical.eventType, eventDate: historical.eventDate || null, notice: msg },
+        quality: { status: "historical_law_unverified", publishDraft: false },
+        sources: [], verification: null, citations: null, sourceLinks: [], caseLaw: null,
+        agents: { legalHistory: { status: historical.status, topic: historical.topic } },
+        disclaimer: lang === "en" ? "Information, not legal advice." : "Πληροφόρηση, όχι νομική συμβουλή.",
+      });
+    }
     const searchText = await expandQuery(query, area); // lay wording → legal concepts
     const retrieved = await retrieveSources(searchText, area);
     const historicArticle = await fetchInheritanceArticle(temporal);
     // Temporal law must be selected BEFORE any LLM ranks or reads legal sources.
-    const preGuard = guardInheritanceSources([...historicArticle, ...retrieved], temporal);
+    const preHistory = guardHistoricalSources(retrieved, historical);
+    const preGuard = guardInheritanceSources([...historicArticle, ...preHistory.sources], temporal);
     // Agent 3: only consider provisions applicable to the event-time regime.
     const checked = await sourceChecker(anthropic, { query, sources: preGuard.sources });
     const guarded = guardInheritanceSources(checked.sources, temporal);
-    const sources = guarded.sources;
-    const temporallyExcluded = preGuard.excluded + guarded.excluded;
+    const postHistory = guardHistoricalSources(guarded.sources, historical);
+    const sources = postHistory.sources;
+    const temporallyExcluded = preGuard.excluded + guarded.excluded + preHistory.excluded + postHistory.excluded;
     if (temporal.issue === "renunciation_annulment" && !guarded.foundApplicableArticle) {
       const msg = lang === "en"
         ? "I identified the applicable inheritance-law version but cannot retrieve its verified article text. Legal analysis is withheld."
@@ -404,24 +427,29 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
 
     const [analysis, caseLaw] = await Promise.all([
       analyzeWithClaude({
-        history, area, lang, mode, audience, document, sources, docFacts: docFactsBlock(docFacts), temporal,
+        history, area, lang, mode, audience, document, sources, docFacts: docFactsBlock(docFacts), temporal, historical,
       }),
       caseLawTask,
     ]);
 
     // Documents, proceedings, dates and lawyer mode ALWAYS get independent review.
-    const reviewRequested = mode === "deep" || audience === "lawyer" || caseLawRequested || temporal.status !== "not_applicable" || requiresIndependentReview(userText, hasDocument);
+    const reviewRequested = mode === "deep" || audience === "lawyer" || caseLawRequested || historical.status === "selected" || temporal.status !== "not_applicable" || requiresIndependentReview(userText, hasDocument);
     const [currency, verification] = await Promise.all([
       currencyAgent(anthropic, { answer: analysis, sources, lang }),
       reviewRequested ? verifyWithOpenAI({ analysis, sources, lang }) : Promise.resolve(null),
     ]);
 
     const citations = classifyCitations(analysis, sources);
-    const quality = assessTemporalDraft(analysis, temporal) || assessEvidence({ sources, verification, reviewRequested, citations, lang });
+    const quality = assessTemporalDraft(analysis, temporal) || assessHistoricalDraft(analysis, historical, lang) || assessEvidence({ sources, verification, reviewRequested, citations, lang });
 
     res.json({
       analysis: quality.publishDraft ? analysis : quality.message,
       quality,
+      historical: historical.status === "selected" ? { status: "selected", topic: historical.topic,
+        eventType: historical.eventType, eventDate: historical.eventDate, ref: historical.version.ref,
+        url: historical.version.sourceUrl, publishedAt: historical.version.publishedAt,
+        applicableFrom: historical.version.applicableFrom,
+        applicableUntil: historical.version.applicableUntil } : null,
       temporal: temporal.status === "not_applicable" ? null : { status: temporal.status, issue: temporal.issue,
         deathDate: temporal.deathDate, applicableArticle: temporal.applicableArticle,
         sourceUrl: INHERITANCE_REFORM.officialUrl, notice: temporalNotice(temporal, lang) },
@@ -433,6 +461,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
       agents: {
         sourceCheck: { kept: sources.length, dropped: checked.dropped + temporallyExcluded },
         temporalLaw: temporal.status !== "not_applicable" ? { status: temporal.status, applicableArticle: temporal.applicableArticle } : null,
+        legalHistory: historical.status === "selected" ? { status: "selected", topic: historical.topic, eventDate: historical.eventDate } : null,
         currency: currency.notice || currency.current?.length ? { notice: currency.notice, current: currency.current } : null,
         document: docFacts
           ? { docType: docFacts.docType, summary: docFacts.summary, keyFacts: docFacts.keyFacts, dates: docFacts.dates, deadlines: docFacts.deadlines }
@@ -486,4 +515,6 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 
 ensureFeedbackSchema().catch((e) => console.error("feedback schema init failed:", e?.message));
 ensureFeederSchema().catch((e) => console.error("feeder schema init failed:", e?.message));
+const legalHistoryReady = ensureLegalHistorySchema();
+legalHistoryReady.catch((e) => console.error("legal history schema init failed:", e?.message));
 app.listen(PORT, () => console.log(`Νομικός Αρωγός backend listening on :${PORT}`));
