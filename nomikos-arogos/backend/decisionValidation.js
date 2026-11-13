@@ -22,7 +22,7 @@ export function validateDecisionText(d, text) {
   const head = strip(text).slice(0, 10000);
   // Check the FIRST document-number heading, not a number merely cited later.
   // This avoids accepting a 1496/2023 page because it incidentally cites 1497/2023.
-  const h = /(?:αριθμος|αριθμ\\.)\\s*(?:αποφασης\\s*)?[:.]?\\s*0*(\\d{1,5})\\s*\\/\\s*(\\d{4})(?!\\d)/u.exec(head);
+  const h = /(?:αριθμος|αριθμ\.)\s*(?:αποφασης\s*)?[:.]?\s*0*(\d{1,5})\s*\/\s*(\d{4})(?!\d)/u.exec(head);
   if (!h || Number(h[1]) !== Number(m[1]) || h[2] !== m[2])
     throw new Error("First decision heading does not match manifest reference");
   return true;
