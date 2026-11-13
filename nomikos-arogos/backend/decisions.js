@@ -14,7 +14,7 @@ import fs from "node:fs/promises";
 import { pool, initSchema } from "./db.js";
 import { embed, EMBED_MODEL } from "./embeddings.js";
 import { chunkDecisionDocument, looksGarbled } from "./chunking.js";
-import { validateDecisionManifestEntry, validateDecisionText } from "./decisionValidation.js";
+import { validateDecisionManifestEntry, validateDecisionText, candidateFromOfficialUrl } from "./decisionValidation.js";
 import { publicationDateAgent, decisionBodyAgent, provenanceAgent } from "./courtAgents.js";
 
 const ENTITIES = { "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&laquo;": "«", "&raquo;": "»" };
@@ -93,6 +93,24 @@ async function ingestOne(d) {
 
 async function main() {
   await initSchema();
+  // Admin-provided official URL: append one decision without scraping portal search listings.
+  const urlAt = process.argv.indexOf("--url");
+  if (urlAt >= 0) {
+    try {
+      const url = process.argv[urlAt + 1];
+      const areaAt = process.argv.indexOf("--area");
+      const area = areaAt >= 0 ? process.argv[areaAt + 1] : "";
+      const candidate = candidateFromOfficialUrl(url, area);
+      const count = await ingestOne(candidate);
+      console.log(candidate.ref + ": " + count + " chunks pending human review");
+    } catch (e) {
+      console.error("Official URL import rejected: " + e.message);
+      process.exitCode = 1;
+    } finally {
+      await pool.end();
+    }
+    return;
+  }
   const approveAt = process.argv.indexOf("--approve");
   const rejectAt = process.argv.indexOf("--reject");
   if (approveAt >= 0 || rejectAt >= 0) {
