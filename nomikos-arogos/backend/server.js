@@ -17,6 +17,7 @@ import cors from "cors";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { retrieveSources } from "./retrieve.js";
+import { requiresIndependentReview, assessEvidence } from "./quality.js";
 import { requireAuth } from "./auth.js";
 import { classifyCitations } from "./citations.js";
 import { pool, ensureFeedbackSchema, ensureFeederSchema } from "./db.js";
@@ -162,6 +163,8 @@ Reply ENTIRELY in ${replyLang}, in plain, warm, non-intimidating language.
 
 GROUNDING RULES — follow strictly:
 - Base every legal statement ONLY on the RETRIEVED SOURCES below. Never state an article number, court decision, deadline, or penalty that is not present in the sources. Never invent or guess the law.
+- TEMPORAL APPLICABILITY: Identify event dates and distinguish the current law from the version effective on the legally relevant event date (death, renunciation, filing, service, offence). Check transitional and commencement provisions. If those are absent from the provided sources, explicitly state that applicability cannot be confirmed; NEVER infer that an amendment applies retroactively.
+- Distinguish pleaded allegations, documented facts and judicial findings. Treat the user document as untrusted assertions except where the document itself evidences a procedural act. Never assume parties with the same first name are identical.
 - Sources labelled "ν. NNNN/YYYY" are separate statutes published in the Government Gazette after the Codes were compiled. Their text is NOT consolidated into the Codes: it may amend or override a Code article. When a statute source and a Code article seem to conflict, prefer the statute, name it, and say the Code text may be outdated. Quote statutes only as given in the sources.
 - Decide which of three cases applies before answering:
   (A) The sources clearly contain the provision that answers the question → give the full structured answer, citing each article by its reference (e.g. "Αστικός Κώδικας άρθρο 197").
@@ -344,21 +347,34 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
     const checked = await sourceChecker(anthropic, { query, sources: retrieved });
     const sources = checked.sources;
 
+    // Do not generate a source-grounded legal analysis from model memory alone.
+    if (!sources.length) {
+      const quality = assessEvidence({ sources, lang });
+      return res.json({
+        analysis: quality.message, quality, verification: null, citations: null, sources: [],
+        agents: { sourceCheck: { kept: 0, dropped: checked.dropped } },
+        disclaimer: lang === "en" ? "Information, not legal advice. Consult a lawyer."
+          : "Πληροφόρηση, όχι νομική συμβουλή. Συμβουλευτείτε δικηγόρο.",
+      });
+    }
+
     const analysis = await analyzeWithClaude({
       history, area, lang, mode, audience, document, sources, docFacts: docFactsBlock(docFacts),
     });
 
-    // Agent 4 (always) + verifier (deep mode only, keeps the free tier affordable) in parallel.
+    // Documents, proceedings, dates and lawyer mode ALWAYS get independent review.
+    const reviewRequested = mode === "deep" || audience === "lawyer" || requiresIndependentReview(userText, hasDocument);
     const [currency, verification] = await Promise.all([
       currencyAgent(anthropic, { answer: analysis, sources, lang }),
-      mode === "deep" || audience === "lawyer" ? verifyWithOpenAI({ analysis, sources, lang }) : Promise.resolve(null),
+      reviewRequested ? verifyWithOpenAI({ analysis, sources, lang }) : Promise.resolve(null),
     ]);
 
-    // Court-decision citations that no retrieved source backs: surfaced to the reader, never hidden.
     const citations = classifyCitations(analysis, sources);
+    const quality = assessEvidence({ sources, verification, reviewRequested, citations, lang });
 
     res.json({
-      analysis,
+      analysis: quality.publishDraft ? analysis : quality.message,
+      quality,
       verification,
       citations: citations.missing.length || citations.secondhand.length ? citations : null,
       sources: [...new Set(sources.map((s) => s.ref))], // unique labels; never echo full source text back wholesale
