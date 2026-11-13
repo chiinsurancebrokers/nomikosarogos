@@ -73,7 +73,7 @@ async function ingestOne(d) {
       const values = [];
       group.forEach((r, i) => {
         const b = i * 8;
-        params.push(`(${b + 1},${b + 2},${b + 3},${b + 4},${b + 5},${b + 6},${b + 7},${b + 8})`);
+        params.push("(" + Array.from({ length: 8 }, (_, j) => "$" + (b + j + 1)).join(",") + ")");
         values.push("decisions", d.court || "Άρειος Πάγος", d.area, null, r.decision, r.text, `[${vectors[i].join(",")}]`, "pending");
       });
       await client.query(
