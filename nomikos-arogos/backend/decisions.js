@@ -15,6 +15,7 @@ import { pool, initSchema } from "./db.js";
 import { embed, EMBED_MODEL } from "./embeddings.js";
 import { chunkDecisionDocument, looksGarbled } from "./chunking.js";
 import { validateDecisionManifestEntry, validateDecisionText } from "./decisionValidation.js";
+import { publicationDateAgent, decisionBodyAgent, provenanceAgent } from "./courtAgents.js";
 
 const ENTITIES = { "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&laquo;": "«", "&raquo;": "»" };
 
@@ -57,7 +58,11 @@ async function ingestOne(d) {
   const text = htmlToText(html).normalize("NFC");
   if (text.length < 1500 || looksGarbled(text)) throw new Error("page text too short or garbled — check charset/HTML");
   validateDecisionText(d, text); // reject an HTML error page or the WRONG decision
-  const rows = chunkDecisionDocument(text, entry.ref, entry.url);
+  // Source agents use the full decision body, not the site's headnotes or index.
+  const body = decisionBodyAgent(text, entry.ref);
+  const publication = publicationDateAgent(body);
+  const provenance = provenanceAgent({ url: entry.url, decisionRef: entry.ref, publishedAt: publication.publishedAt });
+  const rows = chunkDecisionDocument(body, entry.ref, entry.url, provenance.publishedAt);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
