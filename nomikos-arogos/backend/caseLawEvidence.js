@@ -58,7 +58,22 @@ export function emptyCaseLawResult(lang = "el", status = "no_approved_decisions"
   return { status, thesis: "", findings: [], message, informativeOnly: true };
 }
 
-export function verifyCaseLawFindings(proposed, candidates, lang = "el") {
+// Conservative subject-matter gate: evidence of an employment/cassation
+// dispute cannot become direct support for a renunciation-annulment merits
+// claim merely because both texts mention courts, lawsuits or evidence.
+const issueNorm = (s) => String(s || "").normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+export function issueRelevanceGuard(position, question, courtText) {
+  const q = issueNorm(question), d = issueNorm(courtText);
+  if (!/αποποι|renunciat|inheritance disclaimer/.test(q)) return position;
+  if (/δεδικασμεν|εννομο συμφερον|αναιρεσ|αποδεικτικ.{0,20}μεσ|res judicata|cassation standing/.test(q))
+    return position; // A specific procedural question may legitimately use it.
+  if (/αποποι|κληρονομ|1857|1855|inheritance disclaimer/.test(d)) return position;
+  return position === "supports" || position === "opposes" ? "distinguishable" : position;
+}
+
+export function verifyCaseLawFindings(proposed, candidates, lang = "el", question = "") {
   if (!Array.isArray(candidates) || !candidates.length) return emptyCaseLawResult(lang);
   if (!proposed || !Array.isArray(proposed.items)) return emptyCaseLawResult(lang, "unavailable");
   const byRef = new Map(candidates.map((d) => [d.ref, d]));
@@ -73,11 +88,16 @@ export function verifyCaseLawFindings(proposed, candidates, lang = "el") {
     // A model's interpretation is not a judicial finding; display it as assessment.
     const holding = plain(f.holding, 320);
     const comparison = plain(f.comparison, 330);
-    const limitation = plain(f.limitation, 230);
+    const screenedPosition = issueRelevanceGuard(f.position, question, source.snippets.join(" "));
+    const limitation = plain(
+      screenedPosition !== f.position
+        ? (lang === "en" ? "This decision does not directly concern inheritance renunciation. " :
+          "Η απόφαση δεν αφορά άμεσα αποποίηση κληρονομιάς. ") + f.limitation
+        : f.limitation, 230);
     if (holding.length < 12 || comparison.length < 12 || limitation.length < 10) continue;
     used.add(source.ref);
     found.push({
-      ref: source.ref, position: f.position, quote: excerpt,
+      ref: source.ref, position: screenedPosition, quote: excerpt,
       holding, comparison, limitation, url: source.url,
       publishedAt: source.publishedAt,
     });
