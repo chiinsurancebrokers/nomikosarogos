@@ -238,7 +238,7 @@ function buildUserContent({ question, document }) {
 }
 
 // ── 4. Claude analysis over the full conversation ────────────────────────────
-async function analyzeWithClaude({ history, area, lang, mode, audience = "citizen", document, sources, docFacts }) {
+async function analyzeWithClaude({ history, area, lang, mode, audience = "citizen", document, sources, docFacts, temporal = null }) {
   const model = mode === "deep" || audience === "lawyer" ? CLAUDE_DEEP_MODEL : CLAUDE_QUICK_MODEL;
 
   // Map the thread to Anthropic messages (must start with 'user' and alternate).
@@ -264,7 +264,7 @@ async function analyzeWithClaude({ history, area, lang, mode, audience = "citize
     model,
     max_tokens: mode === "deep" || audience === "lawyer" ? 8000 : 4000,
     // Note: Opus 4.7+ rejects temperature/top_p — so we don't set them.
-    system: buildSystemPrompt(lang, area, sources, docFacts, audience),
+    system: buildSystemPrompt(lang, area, sources, docFacts, audience, temporal),
     messages,
   });
   return (msg.content || [])
