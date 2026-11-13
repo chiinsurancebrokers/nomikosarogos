@@ -133,7 +133,9 @@ test("a generated analysis using the wrong article is rejected regardless of mod
 
 test("server uses the actual hard source gate before producing legal answer", () => {
   const server = readFileSync(new URL("../server.js", import.meta.url), "utf8");
-  assert.match(server, /determineInheritanceLaw\(\{ question: userText, docFacts \}\)/);
+  const context = readFileSync(new URL("../sessionContext.js", import.meta.url), "utf8");
+  assert.match(server, /inheritancePreflight\(history, docFacts\)/);
+  assert.match(context, /determineInheritanceLaw\(\{ question: userText, docFacts: facts \}\)/);
   assert.match(server, /fetchInheritanceArticle\(temporal\)/);
   assert.match(server, /const preHistory = guardHistoricalSources\(retrieved, historical\)/);
   assert.match(server, /const preGuard = guardInheritanceSources\(\[\.\.\.historicArticle, \.\.\.preHistory\.sources\], temporal\)/);

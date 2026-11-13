@@ -24,6 +24,7 @@ import { buildSourceLinks } from "./sourceLinks.js";
 import { researchCaseLaw } from "./caseLawResearch.js";
 import { determineInheritanceLaw, guardInheritanceSources, assessTemporalDraft, temporalNotice, INHERITANCE_REFORM } from "./temporalLaw.js";
 import { fetchInheritanceArticle } from "./applicableLawSource.js";
+import { inheritancePreflight, mergeSessionFacts, sanitizeSessionFacts } from "./sessionContext.js";
 import { selectHistoricalVersion, guardHistoricalSources, historyStatusMessage, assessHistoricalDraft } from "./legalHistory.js";
 import { ensureLegalHistorySchema, loadApprovedLegalHistory } from "./legalHistoryStore.js";
 import { pool, ensureFeedbackSchema, ensureFeederSchema } from "./db.js";
@@ -306,7 +307,7 @@ async function verifyWithOpenAI({ analysis, sources, lang }) {
 // ── Endpoint ──────────────────────────────────────────────────────────────────
 app.post("/api/analyze", requireAuth, async (req, res) => {
   try {
-    const { messages, question = "", area = "unsure", lang = "el", mode = "quick", audience: rawAudience, document = null, caseLawResearch: rawCaseLaw = false } = req.body || {};
+    const { messages, question = "", area = "unsure", lang = "el", mode = "quick", audience: rawAudience, document = null, sessionFacts: rawSessionFacts = null, caseLawResearch: rawCaseLaw = false } = req.body || {};
     const caseLawRequested = rawCaseLaw === true;
     const audience = rawAudience === "lawyer" ? "lawyer" : "citizen";
 
@@ -326,33 +327,37 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
 
     const hasDocument = !!(document && document.data && document.mediaType);
 
-    // Agent 1/2 (parallel): document analyst reads an attachment; intake agent decides
-    // whether a missing fact must be asked first (skipped when a document is attached).
-    const [docFacts, intake] = await Promise.all([
-      hasDocument ? documentAgent(anthropic, { document, lang }) : Promise.resolve(null),
-      hasDocument ? Promise.resolve({ ask: false }) : intakeAgent(anthropic, { history, area, lang, hasDocument }),
-    ]);
+    // Read this turn's document once, then combine ONLY date facts carried from
+    // earlier turns in this browser session. Never store document bytes or facts.
+    const extractedDocFacts = hasDocument ? await documentAgent(anthropic, { document, lang }) : null;
+    const docFacts = mergeSessionFacts(rawSessionFacts, extractedDocFacts);
+    const preflight = inheritancePreflight(history, docFacts);
+    history = preflight.history;
+    const userText = preflight.userText;
+    const temporal = preflight.temporal;
 
-    if (intake.ask) {
-      return res.json({
-        analysis: intakeReply(intake.questions, lang),
-        verification: null,
-        sources: [],
-        agents: { intake: { asked: intake.questions.length } },
-        disclaimer: null,
-      });
+    // Inheritance questions MUST pass the deterministic event-time gate before
+    // an LLM intake can request an already-known date or bypass a missing date.
+    if (!preflight.skipIntake) {
+      const intake = await intakeAgent(anthropic, { history, area, lang, hasDocument });
+      if (intake.ask) {
+        return res.json({
+          analysis: intakeReply(intake.questions, lang),
+          verification: null, sources: [],
+          agents: { intake: { asked: intake.questions.length } },
+          disclaimer: null,
+        });
+      }
     }
 
-    // Retrieve using ALL user turns so follow-ups ("ενοικίου") inherit earlier context.
-    const userText = history.filter((m) => m.role === "user").map((m) => m.content).join("\n");
-    const query = [userText, docFacts?.summary, (docFacts?.searchTerms || []).join(", ")]
+    const query = [userText, extractedDocFacts?.summary, (extractedDocFacts?.searchTerms || []).join(", ")]
       .filter(Boolean).join("\n") || "document";
-    const temporal = determineInheritanceLaw({ question: userText, docFacts });
     // A renunciation case cannot be assessed without its triggering death date.
     if (temporal.issue === "renunciation_annulment" &&
         ["date_required", "conflicting_death_dates"].includes(temporal.status)) {
       return res.json({
         analysis: temporalNotice(temporal, lang),
+        sessionFacts: sanitizeSessionFacts(docFacts),
         temporal: { status: temporal.status, issue: temporal.issue, dates: temporal.dates },
         quality: { status: "temporal_date_required", publishDraft: false },
         sources: [], verification: null, citations: null, sourceLinks: [], caseLaw: null,
@@ -371,6 +376,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
       const msg = historyStatusMessage(historical, lang);
       return res.json({
         analysis: msg,
+        sessionFacts: sanitizeSessionFacts(docFacts),
         historical: { status: historical.status, topic: historical.topic,
           eventType: historical.eventType, eventDate: historical.eventDate || null, notice: msg },
         quality: { status: "historical_law_unverified", publishDraft: false },
@@ -396,7 +402,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
         ? "I identified the applicable inheritance-law version but cannot retrieve its verified article text. Legal analysis is withheld."
         : "Εντοπίστηκε το εφαρμοστέο κληρονομικό καθεστώς, αλλά δεν ανακτήθηκε το αντίστοιχο επαληθευμένο άρθρο του ΑΚ. Η νομική ανάλυση αποκρύπτεται.";
       return res.json({
-        analysis: msg, temporal: { status: temporal.status, issue: temporal.issue,
+        analysis: msg, sessionFacts: sanitizeSessionFacts(docFacts), temporal: { status: temporal.status, issue: temporal.issue,
           deathDate: temporal.deathDate, applicableArticle: temporal.applicableArticle,
           sourceUrl: INHERITANCE_REFORM.officialUrl },
         quality: { status: "missing_temporally_applicable_statute", publishDraft: false },
@@ -418,7 +424,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
       const quality = assessEvidence({ sources, lang });
       const caseLaw = await caseLawTask;
       return res.json({
-        analysis: quality.message, quality, caseLaw, verification: null, citations: null, sources: [],
+        analysis: quality.message, quality, sessionFacts: sanitizeSessionFacts(docFacts), caseLaw, verification: null, citations: null, sources: [],
         agents: { sourceCheck: { kept: 0, dropped: checked.dropped } },
         disclaimer: lang === "en" ? "Information, not legal advice. Consult a lawyer."
           : "Πληροφόρηση, όχι νομική συμβουλή. Συμβουλευτείτε δικηγόρο.",
@@ -427,7 +433,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
 
     const [analysis, caseLaw] = await Promise.all([
       analyzeWithClaude({
-        history, area, lang, mode, audience, document, sources, docFacts: docFactsBlock(docFacts), temporal, historical,
+        history, area, lang, mode, audience, document, sources, docFacts: docFactsBlock(extractedDocFacts || docFacts), temporal, historical,
       }),
       caseLawTask,
     ]);
@@ -445,6 +451,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
     res.json({
       analysis: quality.publishDraft ? analysis : quality.message,
       quality,
+      sessionFacts: sanitizeSessionFacts(docFacts),
       historical: historical.status === "selected" ? { status: "selected", topic: historical.topic,
         eventType: historical.eventType, eventDate: historical.eventDate, ref: historical.version.ref,
         url: historical.version.sourceUrl, publishedAt: historical.version.publishedAt,
@@ -463,8 +470,8 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
         temporalLaw: temporal.status !== "not_applicable" ? { status: temporal.status, applicableArticle: temporal.applicableArticle } : null,
         legalHistory: historical.status === "selected" ? { status: "selected", topic: historical.topic, eventDate: historical.eventDate } : null,
         currency: currency.notice || currency.current?.length ? { notice: currency.notice, current: currency.current } : null,
-        document: docFacts
-          ? { docType: docFacts.docType, summary: docFacts.summary, keyFacts: docFacts.keyFacts, dates: docFacts.dates, deadlines: docFacts.deadlines }
+        document: extractedDocFacts
+          ? { docType: extractedDocFacts.docType, summary: extractedDocFacts.summary, keyFacts: extractedDocFacts.keyFacts, dates: extractedDocFacts.dates, deadlines: extractedDocFacts.deadlines }
           : null,
       },
       disclaimer:

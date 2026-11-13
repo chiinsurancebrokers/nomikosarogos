@@ -475,6 +475,7 @@ function MainApp({ lang, setLang, onSignOut }) {
         body: JSON.stringify({
           messages: history.map((m) => ({ role: m.role, content: m.content })),
           area, lang, mode, audience, caseLawResearch, document,
+          sessionFacts: [...messages].reverse().find((m) => m.role === "assistant" && m.sessionFacts)?.sessionFacts || null,
         }),
       });
       if (res.status === 401) setError(t.authExpired);
@@ -484,6 +485,9 @@ function MainApp({ lang, setLang, onSignOut }) {
         const data = await res.json();
         setMessages((prev) => [...prev, {
           role: "assistant", content: data.analysis, sources: data.sources,
+          sessionFacts: data.sessionFacts || (data.temporal?.deathDate
+            ? { dates: [{ label: "Ημερομηνία θανάτου κληρονομουμένου", date: data.temporal.deathDate }] }
+            : [...messages].reverse().find((m) => m.role === "assistant" && m.sessionFacts)?.sessionFacts || null),
           verification: data.verification, citations: data.citations, quality: data.quality, temporal: data.temporal, historical: data.historical, sourceLinks: data.sourceLinks, caseLaw: data.caseLaw, disclaimer: data.disclaimer, agents: data.agents,
         }]);
       }
@@ -538,6 +542,11 @@ function MainApp({ lang, setLang, onSignOut }) {
                 <span>{t.courtsT}:</span>
                 {COURTS.map(([n, u]) => <a key={n} href={u} target="_blank" rel="noreferrer">{n}</a>)}
               </div>
+              <p className="info-body" style={{ fontSize: 12, opacity: 0.8 }}>
+                {lang === "el"
+                  ? "Οι σύνδεσμοι είναι για ανεξάρτητη αναφορά, όχι ένδειξη ζωντανής σύνδεσης. Η αναζήτηση χρησιμοποιεί μόνο ευρετηριασμένες πηγές της εφαρμογής· νομολογία εμφανίζεται μόνο εφόσον έχει επαληθευτεί και εγκριθεί. Η επικαιρότητα των κειμένων δεν πιστοποιείται."
+                  : "These are reference links, not live integrations. Search uses only the application's indexed sources; case law is shown only when verified and approved. Legal currency is not certified."}
+              </p>
             </div>
           )}
         </LeftPanel>
