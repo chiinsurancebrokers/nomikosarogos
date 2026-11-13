@@ -159,23 +159,28 @@ export function chunkDecisions(fullText) {
 export function chunkDecisionDocument(fullText, decision, url = "") {
   const text = (fullText || "").normalize("NFC").replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
   if (!text || !decision) return [];
+  // Keep the official provenance URL on EVERY chunk, including continuation chunks.
+  // Otherwise a semantic hit on page 2+ has no auditable reference in the final answer.
+  const source = url ? `Πηγή: ${url}\n` : "";
+  if (source.length > 350) throw new Error("Court source URL too long");
+  const limit = MAX_CHARS - source.length;
   const paras = text.split(/\n\n/);
   const chunks = [];
   let cur = "";
   const flush = () => { if (cur.trim()) chunks.push(cur.trim()); cur = ""; };
   for (const para of paras) {
-    if (para.length > MAX_CHARS) {
+    if (para.length > limit) {
       flush();
-      for (let j = 0; j < para.length; j += MAX_CHARS) chunks.push(para.slice(j, j + MAX_CHARS).trim());
+      for (let j = 0; j < para.length; j += limit) chunks.push(para.slice(j, j + limit).trim());
       continue;
     }
-    if (cur.length + para.length + 2 > MAX_CHARS) flush();
+    if (cur.length + para.length + 2 > limit) flush();
     cur += (cur ? "\n\n" : "") + para;
   }
   flush();
-  return chunks.map((t, i) => ({
+  return chunks.map((t) => ({
     decision,
-    text: i === 0 && url ? `Πηγή: ${url}\n${t}` : t,
+    text: source + t,
   }));
 }
 
