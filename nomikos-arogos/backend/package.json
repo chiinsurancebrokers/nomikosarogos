@@ -10,7 +10,8 @@
     "feed": "node feeder.js",
     "test": "node --test",
     "decisions": "node decisions.js",
-    "evals": "node evals/run.js"
+    "evals": "node evals/run.js",
+    "law-history": "node legalHistoryAdmin.js"
   },
   "engines": {
     "node": "22.x"
