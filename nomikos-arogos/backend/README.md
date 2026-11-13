@@ -100,8 +100,8 @@ This assumes asymmetric signing keys (ES256/RS256), the default for new Supabase
 
 
 
-- Uploaded documents are processed in memory and **never persisted or logged**.
-- Turn on **zero-retention / no-training** on both APIs.
+- Uploaded documents are processed in memory and **never persisted or logged** by the analysis handler. Feedback entries may persist user questions and responses.
+- Verify and configure API-provider **retention / training / cross-border transfer** terms; do not assume EU-only processing from an EU-hosted database.
 - Prefer redacting PII (Presidio) **before** sending documents to the models.
 - Add a clear consent + privacy notice; keep the "information, not advice" line everywhere.
 - Keep `ALLOWED_ORIGIN` locked to your domain.
@@ -128,7 +128,7 @@ retrieval).
 
 Keeps the database current with new civil/criminal laws published in the Government Gazette (ΦΕΚ Α), which the four Codes in `sources.json` do not include.
 
-**How it works.** Each run probes the next ΦΕΚ Α number after the last processed one (ids are `YYYY` + `01` + 5-digit number, sequential per year); the first miss means nothing newer exists. A new issue is downloaded, pre-filtered, classified by a model (law number, civil/criminal, which Code articles it amends), chunked by article, embedded and stored with `source='statute'` and `code_name='ν. N/YYYY'`. Every issue gets a row in `feeder_items`; nothing is dropped silently. Answers cite these as e.g. "ν. 5187/2025 άρθρο 176", and the prompt tells the model to prefer a statute over an older Code article when they conflict. The statute text is the gazette text, **not** a consolidated Code.
+**How it works.** This feeder is supplementary, not a validated consolidated-code service. It may miss laws or relevant articles and must be monitored. Each run probes the next ΦΕΚ Α number after the last processed one (ids are `YYYY` + `01` + 5-digit number, sequential per year); the first miss means nothing newer exists. A new issue is downloaded, pre-filtered, classified by a model (law number, civil/criminal, which Code articles it amends), chunked by article, embedded and stored with `source='statute'` and `code_name='ν. N/YYYY'`. Every issue gets a row in `feeder_items`; nothing is dropped silently. Answers cite these as e.g. "ν. 5187/2025 άρθρο 176", and the prompt tells the model to prefer a statute over an older Code article when they conflict. The statute text is the gazette text, **not** a consolidated Code.
 
 **Run it on a schedule** (Railway: new service from this repo, root `nomikos-arogos/backend`, start command `node feeder.js`, cron `0 */6 * * *`) with the same `DATABASE_URL`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` as the API.
 
@@ -137,7 +137,7 @@ Keeps the database current with new civil/criminal laws published in the Governm
 | `FEK_URL_TEMPLATE` | `https://www.et.gr/api/DownloadFeksApi/?fek_pdf={id}` | PDF download URL; **verify against et.gr before the first run** |
 | `FEEDER_START_NUMBER` | `1` | First number to try in a year with no saved state — set it near the latest published number to avoid back-filling the whole year |
 | `FEEDER_MAX_PER_RUN` | `25` | Issues processed per run (caps cost; later runs continue) |
-| `FEEDER_REQUIRE_REVIEW` | `false` | `true` holds new statutes (`review_status='pending'`, invisible to search) until approved |
+| `FEEDER_REQUIRE_REVIEW` | `true` | Holds new statutes (`review_status='pending'`, invisible to search) until human approval; disable only with a documented risk acceptance |
 | `FEEDER_OCR` | `false` | OCR issues whose text layer is garbled |
 | `FEEDER_WEBHOOK_URL` | – | Slack-compatible webhook that receives a summary of new laws and problems |
 

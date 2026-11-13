@@ -288,9 +288,14 @@ function AssistantBubble({ msg, prevUserText, area, mode, lang }) {
         </details>
       )}
 
+      {msg.quality?.publishDraft && msg.quality?.message && (
+        <div className="callout warn">
+          <b>{lang === "el" ? "Όρια τεκμηρίωσης" : "Evidence limitations"}:</b> {msg.quality.message}
+        </div>
+      )}
       <Markdown>{msg.content}</Markdown>
 
-      {agents.currency?.notice && (
+      {!msg.quality && agents.currency?.notice && (
         <div className="callout warn"><b>🕒 {t.currencyT}.</b> {agents.currency.notice}</div>
       )}
 
@@ -396,7 +401,7 @@ function MainApp({ lang, setLang, onSignOut }) {
         const data = await res.json();
         setMessages((prev) => [...prev, {
           role: "assistant", content: data.analysis, sources: data.sources,
-          verification: data.verification, disclaimer: data.disclaimer, agents: data.agents,
+          verification: data.verification, quality: data.quality, disclaimer: data.disclaimer, agents: data.agents,
         }]);
       }
     } catch { setError(t.err); }

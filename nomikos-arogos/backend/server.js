@@ -17,6 +17,7 @@ import cors from "cors";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { retrieveSources } from "./retrieve.js";
+import { requiresIndependentReview, assessEvidence } from "./quality.js";
 import { requireAuth } from "./auth.js";
 import { pool, ensureFeedbackSchema, ensureFeederSchema } from "./db.js";
 import {
@@ -146,6 +147,8 @@ Reply ENTIRELY in ${replyLang}, in plain, warm, non-intimidating language.
 
 GROUNDING RULES — follow strictly:
 - Base every legal statement ONLY on the RETRIEVED SOURCES below. Never state an article number, court decision, deadline, or penalty that is not present in the sources. Never invent or guess the law.
+- TEMPORAL LAW: Identify the date of the legally relevant event (such as death, disclaimer/acceptance, court filing, service or offence). Distinguish law in force today from law applicable on that event date. Explicitly check transitional and commencement provisions; a later amendment may renumber an article without applying to an earlier event. If the retrieved sources do not establish the applicable version and its temporal rule, say so and DO NOT decide applicability, deadlines or retroactivity.
+- Separate claims in the user-supplied document from facts independently evidenced by documents; never treat pleadings, arguments or model summaries as verified findings.
 - Sources labelled "ν. NNNN/YYYY" are separate statutes published in the Government Gazette after the Codes were compiled. Their text is NOT consolidated into the Codes: it may amend or override a Code article. When a statute source and a Code article seem to conflict, prefer the statute, name it, and say the Code text may be outdated. Quote statutes only as given in the sources.
 - Decide which of three cases applies before answering:
   (A) The sources clearly contain the provision that answers the question → give the full structured answer, citing each article by its reference (e.g. "Αστικός Κώδικας άρθρο 197").
@@ -327,18 +330,34 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
     const checked = await sourceChecker(anthropic, { query, sources: retrieved });
     const sources = checked.sources;
 
+    // Fail closed if the legal index contains no relevant law. A fluent model-only
+    // answer is not acceptable for a source-grounded legal research product.
+    if (!sources.length) {
+      const quality = assessEvidence({ sources, lang });
+      return res.json({
+        analysis: quality.message, quality, verification: null, sources: [],
+        agents: { sourceCheck: { kept: 0, dropped: checked.dropped } },
+        disclaimer: lang === "en" ? "Information, not legal advice. Consult a lawyer."
+          : "Πληροφόρηση, όχι νομική συμβουλή. Συμβουλευτείτε δικηγόρο.",
+      });
+    }
+
     const analysis = await analyzeWithClaude({
       history, area, lang, mode, document, sources, docFacts: docFactsBlock(docFacts),
     });
 
-    // Agent 4 (always) + verifier (deep mode only, keeps the free tier affordable) in parallel.
+    // Documents, time limits, litigation and other consequential queries are checked
+    // even when the user selected quick mode. An unavailable/partial check fails closed.
+    const reviewRequested = mode === "deep" || requiresIndependentReview(userText, hasDocument);
     const [currency, verification] = await Promise.all([
       currencyAgent(anthropic, { answer: analysis, sources, lang }),
-      mode === "deep" ? verifyWithOpenAI({ analysis, sources, lang }) : Promise.resolve(null),
+      reviewRequested ? verifyWithOpenAI({ analysis, sources, lang }) : Promise.resolve(null),
     ]);
+    const quality = assessEvidence({ sources, verification, reviewRequested, lang });
 
     res.json({
-      analysis,
+      analysis: quality.publishDraft ? analysis : quality.message,
+      quality,
       verification,
       sources: [...new Set(sources.map((s) => s.ref))], // unique labels; never echo full source text back wholesale
       agents: {
