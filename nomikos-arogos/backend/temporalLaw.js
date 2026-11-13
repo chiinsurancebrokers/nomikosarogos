@@ -43,7 +43,7 @@ export function parseGreekDate(fragment) {
   return m ? formatDate(m[3], months[m[2]], m[1]) : null;
 }
 
-const DEATH_LABEL = /θανατ|απεβιω|αποβιω|αποθαν|αποβιωσ|deceas|died|date of death|death date/u;
+const DEATH_LABEL = /θανατ|πεθαν|απεβιω|αποβιω|αποθαν|deceas|died|date of death|death date/u;
 const RENO = /αποποι|ακυρωσ[ηι].{0,30}(?:κληρονομ|αποποι)|renunciat|disclaim|annul.{0,30}inherit/u;
 const SUCCESSION = /κληρονομ|κληρονομικ|αποποι|inherit|succession|renunciat|disclaim/u;
 // The scope matters. These questions need Art.33 exceptions to the general Art.41 rule.
@@ -58,8 +58,9 @@ export function extractDeathDates({ question = "", docFacts = null } = {}) {
       // Only a date close to a DEATH label. Do not confuse the date of disclaimer,
       // lawsuit filing, service or hearing with the date of death.
       const following = text.slice(m.index + m[0].length, m.index + m[0].length + 56);
-      const leading = text.slice(Math.max(0, m.index - 40), m.index);
-      const date = parseGreekDate(following) || parseGreekDate(leading);
+      // Do not borrow a preceding procedural date (disclaimer/filing/service)
+      // when the death date itself is missing from the text.
+      const date = parseGreekDate(following);
       if (date) matches.push({ date, source });
     }
   };
