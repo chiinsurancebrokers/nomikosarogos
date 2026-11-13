@@ -26,6 +26,7 @@ test("rejects nonofficial hosts, malicious schemes and mismatched ids", () => {
 test("verifies decision identity in header, not just a citation elsewhere", () => {
   assert.equal(validateDecisionText(example, "ΑΡΙΘΜΟΣ 1497/2023\nΑΡΕΙΟΣ ΠΑΓΟΣ\nΑΠ 572/2016"), true);
   assert.throws(() => validateDecisionText(example, "ΑΡΙΘΜΟΣ 1496/2023\nΑΡΕΙΟΣ ΠΑΓΟΣ\nΑΠ 1497/2023"));
+  assert.throws(() => validateDecisionText(example, "ΑΡΙΘΜΟΣ 1496/2023\nΑΡΙΘΜΟΣ 1497/2023"));
   assert.throws(() => validateDecisionText(example, "Σελίδα αποτελεσμάτων με άλλες αποφάσεις"));
 });
 
