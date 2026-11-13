@@ -21,7 +21,7 @@ export function validateDecisionText(d, text) {
   const m = /^ΑΠ\s+(\d+)\/(\d{4})$/u.exec(ref);
   const head = strip(text).slice(0, 3500);
   // A casual citation inside the body is NOT enough to establish document identity.
-  const pattern = new RegExp(`(?:αριθμος|αριθμ\\.|απ|α\\.π\\.)\\s*[:.]?\\s*0*${Number(m[1])}\\s*\\/\\s*${m[2]}(?!\\d)`, "u");
+  const pattern = new RegExp(`(?:αριθμος|αριθμ\\.)\\s*[:.]?\\s*0*${Number(m[1])}\\s*\\/\\s*${m[2]}(?!\\d)`, "u");
   if (!pattern.test(head)) throw new Error("Decision number/year not confirmed in the document header");
   return true;
 }
