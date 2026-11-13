@@ -194,3 +194,19 @@ test("CASE-12: secondary death of predeceased brother must NOT override estate o
   assert.deepEqual(temporal.dates, ["2025-10-07"]);
   console.log("SANDBOX CASE-12", JSON.stringify({ deathOfEstateOwner: temporal.deathDate, secondaryDeathIgnored: true }));
 });
+
+
+test("CASE-13: actual pleading uses 'Την 07.10.2025, απεβίωσε...' (date before death verb)", () => {
+  const temporal = determineInheritanceLaw({
+    question: "Ακύρωση αποποίησης κληρονομίας λόγω πλάνης.",
+    docFacts: {
+      summary: "Την 07.10.2025, απεβίωσε η κληρονομουμένη. " +
+        "Ο αδελφός της απεβίωσε στις 16.11.2024.",
+      dates: [],
+      searchTerms: ["ακύρωση αποποίησης"],
+    },
+  });
+  assert.equal(temporal.status, "legacy");
+  assert.equal(temporal.deathDate, "2025-10-07");
+  assert.deepEqual(temporal.dates, ["2025-10-07"]);
+});
