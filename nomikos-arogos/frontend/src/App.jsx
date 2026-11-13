@@ -306,6 +306,23 @@ function AssistantBubble({ msg, prevUserText, area, mode, lang }) {
           <b>{lang === "el" ? "Όρια τεκμηρίωσης" : "Evidence limitations"}:</b> {msg.quality.message}
         </div>
       )}
+      {msg.historical?.status === "selected" && (
+        <div className="callout">
+          <b>{lang === "el" ? "Ιστορική έκδοση εφαρμοστέου νόμου" : "Applicable historical legal version"}</b>
+          <div>{msg.historical.ref}</div>
+          <div>
+            {lang === "el" ? "Κρίσιμη ημερομηνία" : "Relevant event date"}: {msg.historical.eventDate}
+          </div>
+          <div>
+            {lang === "el" ? "Εφαρμογή από" : "Applicable from"}: {msg.historical.applicableFrom}
+            {msg.historical.applicableUntil
+              ? " – " + msg.historical.applicableUntil + (lang === "el" ? " (χωρίς την τελευταία ημέρα)" : " (exclusive)") : ""}
+          </div>
+          <a href={msg.historical.url} target="_blank" rel="noopener noreferrer">
+            {lang === "el" ? "Πρωτογενής νομοθετική πηγή" : "Primary legislative source"}
+          </a>
+        </div>
+      )}
       {msg.temporal?.notice && (
         <div className="callout">
           <b>{lang === "el" ? "Εφαρμοστέο δίκαιο στον κρίσιμο χρόνο" : "Event-time applicable law"}</b>
@@ -467,7 +484,7 @@ function MainApp({ lang, setLang, onSignOut }) {
         const data = await res.json();
         setMessages((prev) => [...prev, {
           role: "assistant", content: data.analysis, sources: data.sources,
-          verification: data.verification, citations: data.citations, quality: data.quality, temporal: data.temporal, sourceLinks: data.sourceLinks, caseLaw: data.caseLaw, disclaimer: data.disclaimer, agents: data.agents,
+          verification: data.verification, citations: data.citations, quality: data.quality, temporal: data.temporal, historical: data.historical, sourceLinks: data.sourceLinks, caseLaw: data.caseLaw, disclaimer: data.disclaimer, agents: data.agents,
         }]);
       }
     } catch { setError(t.err); }
