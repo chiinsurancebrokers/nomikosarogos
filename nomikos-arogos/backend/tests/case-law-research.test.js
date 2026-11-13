@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  approvedDecisionCandidates, validatedExcerpt,
+  approvedDecisionCandidates, validatedExcerpt, issueRelevanceGuard,
   verifyCaseLawFindings, emptyCaseLawResult,
 } from "../caseLawEvidence.js";
 
@@ -96,4 +96,42 @@ test("research SQL filters by human approval and stays separate from site taxono
   assert.match(server, /caseLawRequested/);
   assert.match(server, /caseLawTask/);
   assert.doesNotMatch(research, /fetch\s*\(\s*["']https?:/);
+});
+
+
+test("ΑΠ 340/2025 cannot be direct support for inheritance-disclaimer merits by keyword alone", () => {
+  const proceduralText = "Ο νικήσας διάδικος δύναται να ασκήσει αναίρεση όταν υφίσταται έννομο συμφέρον. " +
+    "Η κρίση περί αποδεικτικού μέσου δεν δημιουργεί δεδικασμένο ως προς την ουσιαστική έννομη σχέση.";
+  assert.equal(
+    issueRelevanceGuard("supports", "Ακύρωση αποποίησης κληρονομίας λόγω πλάνης.", proceduralText),
+    "distinguishable"
+  );
+  assert.equal(
+    issueRelevanceGuard("opposes", "Ακύρωση αποποίησης κληρονομίας λόγω πλάνης.", proceduralText),
+    "distinguishable"
+  );
+  // For a focused res-judicata question, procedural precedent can be relevant.
+  assert.equal(
+    issueRelevanceGuard("supports", "Στην αγωγή αποποίησης δημιουργείται δεδικασμένο;", proceduralText),
+    "supports"
+  );
+});
+
+test("research verifier downgrades unrelated official decision even with exact valid quotation", () => {
+  const courtText = "Το δικαστήριο έκρινε ότι η κρίση περί διαδικαστικού ζητήματος " +
+    "δεν καταλαμβάνεται από το δεδικασμένο της προσβαλλόμενης απόφασης. " +
+    "Για την αναίρεση απαιτείται ατομικό και άμεσο έννομο συμφέρον.";
+  const url340 = "https://www.areiospagos.gr/nomologia/apofaseis_DISPLAY.asp?cd=TEST&apof=340_2025";
+  const c = approvedDecisionCandidates([
+    { ref: "ΑΠ 340/2025",
+      text: meta(url340, "2025-02-27", courtText) },
+  ]);
+  const r = verifyCaseLawFindings({
+    thesis: "Ακύρωση αποποίησης", items: [
+      item("ΑΠ 340/2025", "Το δικαστήριο έκρινε ότι η κρίση περί διαδικαστικού ζητήματος", "supports"),
+    ],
+  }, c, "el", "Ζητείται ακύρωση αποποίησης κληρονομίας.");
+  assert.equal(r.findings.length, 1);
+  assert.equal(r.findings[0].position, "distinguishable");
+  assert.match(r.findings[0].limitation, /δεν αφορά άμεσα αποποίηση/);
 });
