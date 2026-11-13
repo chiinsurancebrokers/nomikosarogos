@@ -27,3 +27,19 @@ export function validateDecisionText(d, text) {
     throw new Error("First decision heading does not match manifest reference");
   return true;
 }
+
+// Admin-only intake for an exact official URL (not crawling court summaries/indexes).
+export function candidateFromOfficialUrl(url, area) {
+  let parsed;
+  try { parsed = new URL(url); } catch { throw new Error('Not a valid URL'); }
+  const apof = parsed.searchParams.get('apof') || '';
+  const m = /^(\d{1,5})_(\d{4})$/.exec(apof);
+  if (!m) throw new Error('Official URL must contain apof=NUMBER_YEAR');
+  const candidate = {
+    ref: 'ΑΠ ' + Number(m[1]) + '/' + m[2],
+    court: 'Άρειος Πάγος',
+    area, url,
+  };
+  validateDecisionManifestEntry(candidate);
+  return candidate;
+}
