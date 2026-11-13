@@ -18,6 +18,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { retrieveSources } from "./retrieve.js";
 import { requireAuth } from "./auth.js";
+import { classifyCitations } from "./citations.js";
 import { pool, ensureFeedbackSchema, ensureFeederSchema } from "./db.js";
 import {
   documentAgent, docFactsBlock, intakeAgent, intakeReply, sourceChecker, currencyAgent,
@@ -127,8 +128,23 @@ async function expandQuery(query, area) {
   }
 }
 
+
+const LAWYER_BLOCK = `
+LAWYER MODE — the reader is a lawyer or legal professional preparing a case. Keep every GROUNDING RULE above; change only depth and structure. Reply in precise legal Greek, without the plain-language softening, and skip the "free help" and "when to see a lawyer" sections.
+Use these sections (omit one only if it truly does not apply):
+1. Facts relied on / facts missing — list the dates, parties and documents you used, and every fact you still need. Never assume a date: if it decides the result, say it is unknown and show the outcome for each possibility.
+2. Governing law — identify the applicable text IN FORCE AT THE RELEVANT TIME (temporal / transitional rules: date of death, of the act, of filing). If the sources do not show which version applies, say so and name both.
+3. Claim structure — the elements the claimant must plead and prove, and the legal basis of each.
+4. Time limits and preclusion — for each deadline: type (παραγραφή vs αποσβεστική προθεσμία vs δικονομική), start event, end date with the arithmetic, how it is interrupted or suspended, whether it is examined ex officio or must be pleaded. Mark every computed date as "to be verified against the file".
+5. Procedural defects and objections — αοριστία, wrong form of claim (declaratory vs formative), passive standing, service and procedural deadlines; for each, say how courts treat it only if a source says so.
+6. Evidence and burden of proof — who must prove what, and which evidence is realistic.
+7. Counter-arguments and risks — the strongest points AGAINST the position you are asked to support, and how the other side will use them. Do not only support the user's side.
+8. Case law — cite ONLY decisions that appear in the RETRIEVED SOURCES, by their reference (e.g. "ΑΠ 1497/2023") and say what that decision held in one sentence taken from the source text. If a decision is cited inside a source but is not itself a source, say "as cited in <source>, not verified". If no decision in the sources supports a point, write "no case law in the available sources" — never fill the gap from memory.
+9. Open questions for the client / the file.
+End with a short list "Not verified" naming every statute, amendment, date or decision you could not confirm from the sources.`;
+
 // ── 2. System prompt (grounded) ──────────────────────────────────────────────
-function buildSystemPrompt(lang, area, sources, docFacts = "") {
+function buildSystemPrompt(lang, area, sources, docFacts = "", audience = "citizen") {
   const replyLang = lang === "en" ? "English" : "Greek";
   const areaName =
     area === "civil"
@@ -184,7 +200,7 @@ EXAMPLE of case (B) — clarify instead of guessing (do not copy the wording; ma
 User: «Θέλω να μάθω για την εγγύηση.»
 Good response: a warm one-line opening, then: «Για να βρω τον σωστό νόμο χρειάζομαι μια διευκρίνιση — εννοείτε την εγγύηση (εγγυοδοσία) σε μίσθωση κατοικίας, την εγγύηση/εγγυητή σε δάνειο, ή την εγγύηση καλής εκτέλεσης σε σύμβαση;» — then stop and wait. (Reason: «εγγύηση» maps to different articles per sense; guessing would cite the wrong law.)
 
-${docFacts ? `FACTS EXTRACTED FROM THE USER'S DOCUMENT (by a separate reader; treat as the user's situation, not as law):\n${docFacts}\n\n` : ""}RETRIEVED SOURCES:
+${audience === "lawyer" ? LAWYER_BLOCK + "\n\n" : ""}${docFacts ? `FACTS EXTRACTED FROM THE USER'S DOCUMENT (by a separate reader; treat as the user's situation, not as law):\n${docFacts}\n\n` : ""}RETRIEVED SOURCES:
 ${sourceBlock}`;
 }
 
@@ -215,8 +231,8 @@ function buildUserContent({ question, document }) {
 }
 
 // ── 4. Claude analysis over the full conversation ────────────────────────────
-async function analyzeWithClaude({ history, area, lang, mode, document, sources, docFacts }) {
-  const model = mode === "deep" ? CLAUDE_DEEP_MODEL : CLAUDE_QUICK_MODEL;
+async function analyzeWithClaude({ history, area, lang, mode, audience = "citizen", document, sources, docFacts }) {
+  const model = mode === "deep" || audience === "lawyer" ? CLAUDE_DEEP_MODEL : CLAUDE_QUICK_MODEL;
 
   // Map the thread to Anthropic messages (must start with 'user' and alternate).
   const messages = history.map((m) => ({
@@ -239,9 +255,9 @@ async function analyzeWithClaude({ history, area, lang, mode, document, sources,
 
   const msg = await anthropic.messages.create({
     model,
-    max_tokens: mode === "deep" ? 8000 : 4000,
+    max_tokens: mode === "deep" || audience === "lawyer" ? 8000 : 4000,
     // Note: Opus 4.7+ rejects temperature/top_p — so we don't set them.
-    system: buildSystemPrompt(lang, area, sources, docFacts),
+    system: buildSystemPrompt(lang, area, sources, docFacts, audience),
     messages,
   });
   return (msg.content || [])
@@ -281,7 +297,8 @@ async function verifyWithOpenAI({ analysis, sources, lang }) {
 // ── Endpoint ──────────────────────────────────────────────────────────────────
 app.post("/api/analyze", requireAuth, async (req, res) => {
   try {
-    const { messages, question = "", area = "unsure", lang = "el", mode = "quick", document = null } = req.body || {};
+    const { messages, question = "", area = "unsure", lang = "el", mode = "quick", audience: rawAudience, document = null } = req.body || {};
+    const audience = rawAudience === "lawyer" ? "lawyer" : "citizen";
 
     // Accept a full thread; fall back to a single question for backward compatibility.
     let history = Array.isArray(messages) && messages.length
@@ -328,18 +345,22 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
     const sources = checked.sources;
 
     const analysis = await analyzeWithClaude({
-      history, area, lang, mode, document, sources, docFacts: docFactsBlock(docFacts),
+      history, area, lang, mode, audience, document, sources, docFacts: docFactsBlock(docFacts),
     });
 
     // Agent 4 (always) + verifier (deep mode only, keeps the free tier affordable) in parallel.
     const [currency, verification] = await Promise.all([
       currencyAgent(anthropic, { answer: analysis, sources, lang }),
-      mode === "deep" ? verifyWithOpenAI({ analysis, sources, lang }) : Promise.resolve(null),
+      mode === "deep" || audience === "lawyer" ? verifyWithOpenAI({ analysis, sources, lang }) : Promise.resolve(null),
     ]);
+
+    // Court-decision citations that no retrieved source backs: surfaced to the reader, never hidden.
+    const citations = classifyCitations(analysis, sources);
 
     res.json({
       analysis,
       verification,
+      citations: citations.missing.length || citations.secondhand.length ? citations : null,
       sources: [...new Set(sources.map((s) => s.ref))], // unique labels; never echo full source text back wholesale
       agents: {
         sourceCheck: { kept: sources.length, dropped: checked.dropped },

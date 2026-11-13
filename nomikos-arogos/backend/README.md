@@ -142,3 +142,18 @@ Keeps the database current with new civil/criminal laws published in the Governm
 | `FEEDER_WEBHOOK_URL` | – | Slack-compatible webhook that receives a summary of new laws and problems |
 
 **Review commands:** `node feeder.js --approve <fekId>` releases a held statute; `node feeder.js --reject <fekId>` deletes it. Run `npm test` for the offline tests.
+
+## Case law (Άρειος Πάγος) and lawyer mode
+
+- `decisions.json` lists court decisions by URL; `npm run decisions` downloads each one, stores it as a
+  single document (never split on citations inside its text) and embeds it. Run it on Railway — it needs
+  network access to areiospagos.gr and OpenAI embedding credits. Watch the first run: pages are decoded as
+  UTF-8 or windows-1253 and converted from HTML by a simple stripper. The seed list is a starting set found
+  by topic search, **not** a vetted selection; extend it by adding entries.
+- Answers may cite a decision only if it is in the retrieved sources. `citations.js` checks the final answer and
+  the API returns `citations: { missing, secondhand }`; the UI shows them as a warning.
+- `audience: "lawyer"` (checkbox in the UI) switches to the technical structure: governing law at the relevant
+  time, time limits and preclusion with arithmetic, procedural defects, burden of proof, counter-arguments,
+  case law from sources only, and a "Not verified" list. It always uses the deep model and the verifier.
+- `evals/inheritance.json` holds test questions from a real inheritance-renunciation dispute, with what a good
+  answer must mention or must not conclude.

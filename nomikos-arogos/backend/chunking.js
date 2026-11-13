@@ -150,6 +150,35 @@ export function chunkDecisions(fullText) {
   return chunks.filter((c) => c.text);
 }
 
+
+// One court decision = one document. Unlike chunkDecisions (which splits a bundle of decisions on
+// every "ΑΠ N/YYYY" it sees), this never splits on citations INSIDE the text — a full Άρειος Πάγος
+// decision cites dozens of other decisions, and splitting there would label chunks with the wrong
+// number. Every chunk carries the decision's own reference; the first chunk also carries the source
+// URL so the answer can link to the official text.
+export function chunkDecisionDocument(fullText, decision, url = "") {
+  const text = (fullText || "").normalize("NFC").replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  if (!text || !decision) return [];
+  const paras = text.split(/\n\n/);
+  const chunks = [];
+  let cur = "";
+  const flush = () => { if (cur.trim()) chunks.push(cur.trim()); cur = ""; };
+  for (const para of paras) {
+    if (para.length > MAX_CHARS) {
+      flush();
+      for (let j = 0; j < para.length; j += MAX_CHARS) chunks.push(para.slice(j, j + MAX_CHARS).trim());
+      continue;
+    }
+    if (cur.length + para.length + 2 > MAX_CHARS) flush();
+    cur += (cur ? "\n\n" : "") + para;
+  }
+  flush();
+  return chunks.map((t, i) => ({
+    decision,
+    text: i === 0 && url ? `Πηγή: ${url}\n${t}` : t,
+  }));
+}
+
 // Heuristic: did text extraction produce legacy-encoding garbage instead of Greek?
 export function looksGarbled(text) {
   const sample = (text || "").slice(0, 4000);
