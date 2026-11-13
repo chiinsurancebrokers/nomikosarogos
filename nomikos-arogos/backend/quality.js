@@ -9,7 +9,7 @@ export function requiresIndependentReview(text = "", hasDocument = false) {
   return Boolean(hasDocument || HIGH_STAKES_RE.test(String(text)));
 }
 
-export function assessEvidence({ sources = [], verification = null, reviewRequested = false, lang = "el" } = {}) {
+export function assessEvidence({ sources = [], verification = null, reviewRequested = false, citations = null, lang = "el" } = {}) {
   const en = lang === "en";
   const count = Array.isArray(sources) ? sources.length : 0;
   if (!count) {
@@ -18,6 +18,16 @@ export function assessEvidence({ sources = [], verification = null, reviewReques
       message: en
         ? "No relevant legal provisions were retrieved. I cannot offer a source-grounded analysis of this case. A lawyer should verify the applicable law and deadlines."
         : "Δεν ανακτήθηκαν σχετικές νομικές διατάξεις. Δεν μπορώ να παρουσιάσω τεκμηριωμένη ανάλυση της υπόθεσης. Χρειάζεται έλεγχος της εφαρμοστέας νομοθεσίας και των προθεσμιών από δικηγόρο.",
+    };
+  }
+  // A citation listed inside another decision is not independent verification.
+  // Neither second-hand nor absent decisions may be used in a published legal argument.
+  if ((citations?.missing?.length || 0) > 0 || (citations?.secondhand?.length || 0) > 0) {
+    return {
+      status: "unsupported_case_law", publishDraft: false,
+      message: en
+        ? "The draft cites court decisions not independently retrieved and checked. I have withheld the argument rather than presenting potentially inaccurate case law."
+        : "Το σχέδιο περιέχει παραπομπές σε δικαστικές αποφάσεις που δεν ανακτήθηκαν και δεν επαληθεύτηκαν αυτοτελώς. Η ανάλυση αποκρύπτεται ώστε να μην παρουσιαστεί ενδεχομένως λανθασμένη νομολογία.",
     };
   }
   if (reviewRequested && verification?.verdict !== "supported") {
