@@ -31,7 +31,7 @@ import { looksLikeRelevantLaw, classifyStatute, chunkStatute, prepareGazetteText
 const {
   FEEDER_START_NUMBER = "1",
   FEEDER_MAX_PER_RUN = "25",
-  FEEDER_REQUIRE_REVIEW = "false",
+  FEEDER_REQUIRE_REVIEW = "true",
   FEEDER_OCR = "false",
   FEEDER_WEBHOOK_URL,
   ANTHROPIC_API_KEY,
@@ -42,7 +42,8 @@ const CONSOLIDATED = FEEDER_CONSOLIDATED_LAWS
   ? FEEDER_CONSOLIDATED_LAWS.split(",").map((x) => x.trim()).filter(Boolean)
   : DEFAULT_CONSOLIDATED;
 
-const REQUIRE_REVIEW = FEEDER_REQUIRE_REVIEW === "true";
+// Human approval is the safe default for laws used in legal answers.
+const REQUIRE_REVIEW = FEEDER_REQUIRE_REVIEW !== "false";
 const ISSUE_TYPE_A = 1; // ΦΕΚ Α
 const batch = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 
