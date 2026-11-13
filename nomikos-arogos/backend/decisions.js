@@ -14,6 +14,7 @@ import fs from "node:fs/promises";
 import { pool, initSchema } from "./db.js";
 import { embed, EMBED_MODEL } from "./embeddings.js";
 import { chunkDecisionDocument, looksGarbled } from "./chunking.js";
+import { validateDecisionManifestEntry, validateDecisionText } from "./decisionValidation.js";
 
 const ENTITIES = { "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&laquo;": "«", "&raquo;": "»" };
 
@@ -51,34 +52,63 @@ async function fetchDecision(url) {
 const batch = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 
 async function ingestOne(d) {
-  const html = await fetchDecision(d.url);
+  const entry = validateDecisionManifestEntry(d); // block non-official domains and mismatched URL identifiers
+  const html = await fetchDecision(entry.url);
   const text = htmlToText(html).normalize("NFC");
   if (text.length < 1500 || looksGarbled(text)) throw new Error("page text too short or garbled — check charset/HTML");
-  const rows = chunkDecisionDocument(text, d.ref, d.url);
-  await pool.query("DELETE FROM chunks WHERE source = 'decisions' AND decision = $1", [d.ref]);
-  for (const group of batch(rows, 64)) {
-    const vectors = await embed(group.map((r) => `${d.court || "Άρειος Πάγος"} ${r.decision}\n${r.text}`));
-    const params = [];
-    const values = [];
-    group.forEach((r, i) => {
-      const b = i * 7;
-      params.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7})`);
-      values.push("decisions", d.court || "Άρειος Πάγος", d.area || "civil", null, r.decision, r.text, `[${vectors[i].join(",")}]`);
-    });
-    await pool.query(`INSERT INTO chunks (source,code_name,area,article,decision,content,embedding) VALUES ${params.join(",")}`, values);
+  validateDecisionText(d, text); // reject an HTML error page or the WRONG decision
+  const rows = chunkDecisionDocument(text, entry.ref, entry.url);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM chunks WHERE source = 'decisions' AND decision = $1", [entry.ref]);
+    for (const group of batch(rows, 64)) {
+      const vectors = await embed(group.map((r) => `${d.court || "Άρειος Πάγος"} ${r.decision}\n${r.text}`));
+      const params = [];
+      const values = [];
+      group.forEach((r, i) => {
+        const b = i * 8;
+        params.push(`(${b + 1},${b + 2},${b + 3},${b + 4},${b + 5},${b + 6},${b + 7},${b + 8})`);
+        values.push("decisions", d.court || "Άρειος Πάγος", d.area, null, r.decision, r.text, `[${vectors[i].join(",")}]`, "pending");
+      });
+      await client.query(
+        `INSERT INTO chunks (source,code_name,area,article,decision,content,embedding,review_status) VALUES ${params.join(",")}`,
+        values
+      );
+    }
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
   }
-  return rows.length;
+  return rows.length; // review_status=pending; not searchable until approved by a human
 }
 
 async function main() {
   await initSchema();
+  const approveAt = process.argv.indexOf("--approve");
+  const rejectAt = process.argv.indexOf("--reject");
+  if (approveAt >= 0 || rejectAt >= 0) {
+    const approving = approveAt >= 0;
+    const ref = process.argv[(approving ? approveAt : rejectAt) + 1];
+    if (!ref || !/^ΑΠ \d{1,5}\/\d{4}$/u.test(ref)) throw new Error("Specify a decision ref, e.g. ΑΠ 1497/2023");
+    const result = approving
+      ? await pool.query("UPDATE chunks SET review_status = 'approved' WHERE source='decisions' AND decision=$1", [ref])
+      : await pool.query("DELETE FROM chunks WHERE source='decisions' AND decision=$1", [ref]);
+    if (!result.rowCount) throw new Error("No indexed decision with that reference");
+    console.log(`${approving ? "Approved" : "Rejected"} ${ref} (${result.rowCount} chunks)`);
+    await pool.end();
+    return;
+  }
   const list = JSON.parse(await fs.readFile(new URL("./decisions.json", import.meta.url), "utf8"));
   const i = process.argv.indexOf("--only");
   const only = i > -1 ? process.argv[i + 1].split(",").map((x) => x.trim()) : null;
   const todo = only ? list.filter((d) => only.some((o) => d.ref.endsWith(o))) : list;
   let ok = 0, failed = 0;
   for (const d of todo) {
-    try { const n = await ingestOne(d); ok++; console.log(`✓ ${d.ref}: ${n} chunks`); }
+    try { const n = await ingestOne(d); ok++; console.log(`✓ ${d.ref}: ${n} chunks (PENDING HUMAN REVIEW)`); }
     catch (e) { failed++; console.error(`✗ ${d.ref}: ${e.message}`); }
     await new Promise((r) => setTimeout(r, 1500)); // be polite to the court's server
   }
