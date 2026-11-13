@@ -484,7 +484,10 @@ function MainApp({ lang, setLang, onSignOut }) {
       else {
         const data = await res.json();
         setMessages((prev) => [...prev, {
-          role: "assistant", content: data.analysis, sources: data.sources, sessionFacts: data.sessionFacts,
+          role: "assistant", content: data.analysis, sources: data.sources,
+          sessionFacts: data.sessionFacts || (data.temporal?.deathDate
+            ? { dates: [{ label: "Ημερομηνία θανάτου κληρονομουμένου", date: data.temporal.deathDate }] }
+            : [...messages].reverse().find((m) => m.role === "assistant" && m.sessionFacts)?.sessionFacts || null),
           verification: data.verification, citations: data.citations, quality: data.quality, temporal: data.temporal, historical: data.historical, sourceLinks: data.sourceLinks, caseLaw: data.caseLaw, disclaimer: data.disclaimer, agents: data.agents,
         }]);
       }
