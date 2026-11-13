@@ -475,6 +475,7 @@ function MainApp({ lang, setLang, onSignOut }) {
         body: JSON.stringify({
           messages: history.map((m) => ({ role: m.role, content: m.content })),
           area, lang, mode, audience, caseLawResearch, document,
+          sessionFacts: [...messages].reverse().find((m) => m.role === "assistant" && m.sessionFacts)?.sessionFacts || null,
         }),
       });
       if (res.status === 401) setError(t.authExpired);
@@ -483,7 +484,7 @@ function MainApp({ lang, setLang, onSignOut }) {
       else {
         const data = await res.json();
         setMessages((prev) => [...prev, {
-          role: "assistant", content: data.analysis, sources: data.sources,
+          role: "assistant", content: data.analysis, sources: data.sources, sessionFacts: data.sessionFacts,
           verification: data.verification, citations: data.citations, quality: data.quality, temporal: data.temporal, historical: data.historical, sourceLinks: data.sourceLinks, caseLaw: data.caseLaw, disclaimer: data.disclaimer, agents: data.agents,
         }]);
       }
