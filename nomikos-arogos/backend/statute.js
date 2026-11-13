@@ -114,7 +114,10 @@ export function chunkStatute(text) {
 // Laws whose text is already inside a consolidated Code we index (so indexing the bare
 // amending law as well would show the same provisions twice). Extend via
 // FEEDER_CONSOLIDATED_LAWS="5303/2026,5336/2026,..." (with or without the "ν. " prefix).
-export const DEFAULT_CONSOLIDATED = ["5303/2026", "5336/2026", "5344/2026"];
+// Never presume that a new law has been incorporated into the historical Code PDFs.
+// An incorrect skip can suppress the ONLY applicable new legislation in the index.
+// Administrators may configure FEEDER_CONSOLIDATED_LAWS after inspecting both texts.
+export const DEFAULT_CONSOLIDATED = [];
 export function isConsolidated(lawRef, list = DEFAULT_CONSOLIDATED) {
   const n = String(lawRef || "").replace(/^ν\.\s*/u, "").trim();
   return list.map((x) => String(x).replace(/^ν\.\s*/u, "").trim()).includes(n);
