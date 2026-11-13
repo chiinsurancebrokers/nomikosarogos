@@ -37,9 +37,10 @@ test("every decision chunk retains official provenance", () => {
 });
 
 test("only a verified retrieved primary-source link becomes clickable", () => {
-  const rows = chunkDecisionDocument("ΑΡΙΘΜΟΣ 1497/2023 και το πλήρες σκεπτικό.", example.ref, example.url);
+  const rows = chunkDecisionDocument("ΑΡΙΘΜΟΣ 1497/2023 και το πλήρες σκεπτικό.", example.ref, example.url, "2023-10-04");
   const good = buildSourceLinks([{ ref: example.ref, text: rows[0].text }]);
   assert.equal(good[0]?.url, example.url);
+  assert.equal(good[0]?.publishedAt, "2023-10-04");
   const bad = buildSourceLinks([
     { ref: example.ref, text: "Πηγή: https://evil.test/nomologia/apofaseis_DISPLAY.asp?apof=1497_2023\nΚείμενο" },
   ]);
