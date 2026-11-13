@@ -68,3 +68,17 @@ test("decision indexer uses proper SQL bind markers and all three agents", () =>
   assert.ok(code.includes('Array.from({ length: 8 }'));
   assert.ok(code.includes('"$" + (b + j + 1)'));
 });
+
+
+test("official AP 340/2025: publication 27 February, not deliberation 3 February", () => {
+  const fullText = [
+    "Αριθμός 340/2025",
+    "ΤΟ ΔΙΚΑΣΤΗΡΙΟ ΤΟΥ ΑΡΕΙΟΥ ΠΑΓΟΥ",
+    "ΣΚΕΦΘΗΚΕ ΣΥΜΦΩΝΑ ΜΕ ΤΟ ΝΟΜΟ",
+    "ΚΡΙΘΗΚΕ, αποφασίσθηκε στην Αθήνα, στις 3 Φεβρουαρίου 2025.",
+    "ΔΗΜΟΣΙΕΥΘΗΚΕ σε δημόσια συνεδρίαση στο ακροατήριό του, στην Αθήνα, στις 27 Φεβρουαρίου 2025.",
+  ].join("\n");
+  assert.equal(publicationDateAgent(fullText).publishedAt, "2025-02-27");
+  const body = decisionBodyAgent(fullText, "ΑΠ 340/2025");
+  assert.match(body, /Αριθμός 340\/2025/);
+});
