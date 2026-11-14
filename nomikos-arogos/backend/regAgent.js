@@ -125,6 +125,15 @@ function courtHtmlToText(html) {
     .replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+export function extractCourtDivision(body) {
+  // Court-division label is structural metadata from the decision, not a legal classification.
+  const header = String(body).slice(0, 1200);
+  const m = /(?:^|\n)\s*([^\n]{0,18}?)\s*(Πολιτικό|Ποινικό)\s+Τμήμα/imu.exec(header);
+  if (!m) return { division: null, areaHint: null };
+  return { division: (m[1] + " " + m[2] + " Τμήμα").trim(),
+    areaHint: m[2].toLowerCase() === "πολιτικό" ? "civil" : "criminal" };
+}
+
 export function extractUnverifiedReferences(body) {
   const decisions = [...new Set([...String(body).matchAll(/(?<![\p{L}\p{N}])(?:ΟλΑΠ|ΑΠ)\s+\d{1,5}\/\d{4}(?![\p{L}\p{N}])/gu)].map((m) => m[0]))];
   const statutes = [...new Set([...String(body).matchAll(/(?:άρθρ(?:ο|α|ων)?|αρθρ\.)\s*\d{1,4}\s*(?:§\s*\d+)?\s*(?:ΑΚ|ΚΠολΔ|ΠΚ|ΚΠΔ)/giu)].map((m) => m[0]))];
@@ -144,7 +153,7 @@ export async function retrieveCourtDecision(sourceUrl, { fetchImpl = fetch, time
     if (data.case_id !== source.cd || data.court !== "Areios Pagos")
       throw new Error("REG_INTEGRITY: JSON case identity or court mismatch");
     const verified = completeDecision(data.document_text, source, expectedRef || source.ref);
-    return { ...verified, transport: "official_json", ...extractUnverifiedReferences(verified.body) };
+    return { ...verified, transport: "official_json", ...extractCourtDivision(verified.body), ...extractUnverifiedReferences(verified.body) };
   } catch (error) {
     if (String(error.message).startsWith("REG_INTEGRITY:") || String(error.message).includes("case id / decision number mismatch"))
       throw error; // A contradictory identity is not a transient transport failure.
@@ -157,7 +166,7 @@ export async function retrieveCourtDecision(sourceUrl, { fetchImpl = fetch, time
     const text = courtHtmlToText(decodeCourtHtml(bytes, contentType));
     if (text.length < 1500) throw new Error("REG: HTML body too short");
     const verified = completeDecision(text, source, expectedRef || source.ref);
-    return { ...verified, transport: "official_html_fallback", ...extractUnverifiedReferences(verified.body) };
+    return { ...verified, transport: "official_html_fallback", ...extractCourtDivision(verified.body), ...extractUnverifiedReferences(verified.body) };
   } catch (error) {
     throw new Error("REG: JSON failed (" + jsonFailure.message + "); official HTML failed (" + error.message + ")");
   }
