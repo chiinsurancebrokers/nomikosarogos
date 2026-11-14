@@ -1,11 +1,14 @@
-// Usage: npm run evals -- ./evals/answers.json
+// Usage: npm run evals -- ./evals/answers.json [--suite inheritance|criminal]
 // Format: { "cases": { "id": { "analysis": "...", "retrievedSources": [] } } }
 // Runs NO model calls and never uploads private answers. Do not commit real case
 // responses or party names to a public repository.
 import fs from "node:fs/promises";
 import { gradeSuite } from "./rubric.js";
 
-const suite = JSON.parse(await fs.readFile(new URL("./inheritance.json", import.meta.url), "utf8"));
+const suiteAt = process.argv.indexOf("--suite");
+const suiteName = suiteAt > 0 ? process.argv[suiteAt + 1] : "inheritance";
+if (!/^[a-z]+$/.test(suiteName)) throw new Error("Invalid suite name");
+const suite = JSON.parse(await fs.readFile(new URL(`./${suiteName}.json`, import.meta.url), "utf8"));
 const file = process.argv[2];
 if (!file) {
   console.error("Usage: npm run evals -- ./evals/answers.json");
