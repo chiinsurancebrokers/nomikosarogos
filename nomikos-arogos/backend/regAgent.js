@@ -102,7 +102,7 @@ function courtHtmlToText(html) {
 }
 
 export function extractUnverifiedReferences(body) {
-  const decisions = [...new Set([...String(body).matchAll(/\b(?:ΟλΑΠ|ΑΠ)\s+\d{1,5}\/\d{4}\b/gu)].map((m) => m[0]))];
+  const decisions = [...new Set([...String(body).matchAll(/(?<![\p{L}\p{N}])(?:ΟλΑΠ|ΑΠ)\s+\d{1,5}\/\d{4}(?![\p{L}\p{N}])/gu)].map((m) => m[0]))];
   const statutes = [...new Set([...String(body).matchAll(/(?:άρθρ(?:ο|α|ων)?|αρθρ\.)\s*\d{1,4}\s*(?:§\s*\d+)?\s*(?:ΑΚ|ΚΠολΔ|ΠΚ|ΚΠΔ)/giu)].map((m) => m[0]))];
   return { citedDecisions: decisions.slice(0, 100), citedStatutes: statutes.slice(0, 100), verifiedIndividually: false };
 }
