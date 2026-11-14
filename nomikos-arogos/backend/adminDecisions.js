@@ -24,14 +24,16 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
-let running = false;
-const guarded = (fn) => async (req, res) => {
-  if (running) return res.status(409).json({ error: "An ingest job is already running" });
-  running = true;
-  try { res.json(await fn(req)); }
-  catch (e) { res.status(400).json({ error: e.message }); }
-  finally { running = false; }
-};
+// Ingest runs as a background job (a full manifest takes minutes; proxies time out long requests).
+let job = null;
+export function startJob(runner) {
+  if (job?.state === "running") throw new Error("An ingest job is already running");
+  const j = (job = { state: "running", startedAt: new Date().toISOString(), done: 0, total: null, results: [] });
+  runner((p) => Object.assign(j, p))
+    .then((results) => Object.assign(j, { state: "finished", results, finishedAt: new Date().toISOString() }))
+    .catch((e) => Object.assign(j, { state: "failed", error: e.message }));
+  return j;
+}
 
 export const adminDecisions = Router();
 adminDecisions.use(requireAdmin);
@@ -39,15 +41,20 @@ adminDecisions.get("/decisions", async (_req, res) => {
   try { res.json({ decisions: await listDecisions() }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-// Body: { "only": ["1497/2023"] } to limit the manifest, or { "url": "<official areiospagos URL>", "area": "civil" }.
-adminDecisions.post("/decisions/ingest", guarded(async (req) => {
-  const { url, area, only } = req.body || {};
-  if (url) {
-    const c = candidateFromOfficialUrl(String(url), String(area || ""));
-    return { results: [{ ref: c.ref, ok: true, chunks: await ingestOne(c), status: "pending" }] };
-  }
-  return { results: await ingestManifest(Array.isArray(only) ? only.map(String) : null) };
-}));
+// Body: { "only": ["1497/2023"], "skipIndexed": true } to limit the manifest, or
+// { "url": "<official areiospagos URL>", "area": "civil" }. Returns 202; poll GET /decisions/job.
+adminDecisions.post("/decisions/ingest", (req, res) => {
+  try {
+    const { url, area, only, skipIndexed } = req.body || {};
+    if (url) {
+      const c = candidateFromOfficialUrl(String(url), String(area || ""));
+      return res.status(202).json(startJob(async () => [{ ref: c.ref, ok: true, chunks: await ingestOne(c) }]));
+    }
+    const list = Array.isArray(only) ? only.map(String) : null;
+    res.status(202).json(startJob((onProgress) => ingestManifest(list, { skipIndexed: !!skipIndexed, onProgress })));
+  } catch (e) { res.status(e.message.includes("already running") ? 409 : 400).json({ error: e.message }); }
+});
+adminDecisions.get("/decisions/job", (_req, res) => res.json(job || { state: "idle" }));
 // Body: { "ref": "ΑΠ 1497/2023", "action": "approve" | "reject" } — approve only after reading the full decision.
 adminDecisions.post("/decisions/review", async (req, res) => {
   try {
