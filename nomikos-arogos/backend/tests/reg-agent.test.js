@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inspectCourtSourceUrl, retrieveCourtDecision, extractUnverifiedReferences } from "../regAgent.js";
+import { inspectCourtSourceUrl, retrieveCourtDecision, extractCourtDivision, extractUnverifiedReferences } from "../regAgent.js";
 
 const cd = "L6GPBiDNyTnGk6UqHybZD3rXLoPbAV";
 const official = "https://www.areiospagos.gr/nomologia/apofaseis_DISPLAY.asp?cd=" + cd + "&apof=1791_2007";
@@ -45,6 +45,8 @@ test("REG retrieves official JSON, verifies decision/date, and labels references
   assert.equal(result.publishedAt, "2007-07-20");
   assert.equal(result.officialUrl, official);
   assert.equal(result.transport, "official_json");
+  assert.equal(result.areaHint, "civil");
+  assert.match(result.division, /Πολιτικό Τμήμα/);
   assert.ok(result.body.startsWith("Αριθμός 1791/2007"));
   assert.ok(result.citedDecisions.includes("ΑΠ 14/2006"));
   assert.equal(result.verifiedIndividually, false);
@@ -127,4 +129,9 @@ test("REG refuses duplicate cd and redirects outside the court domain", async ()
       headers: { get: () => null }, arrayBuffer: async () => Buffer.from(JSON.stringify(payload())),
     }),
   }), /redirected outside/);
+});
+
+test("REG recognizes civil/criminal divisions without inferring holdings", () => {
+  assert.equal(extractCourtDivision("Αριθμός 1/2024\nΒ΄ Ποινικό Τμήμα\nΣΚΕΦΘΗΚΕ").areaHint, "criminal");
+  assert.equal(extractCourtDivision("Αριθμός 1/2024\nΟλομέλεια\nΣΚΕΦΘΗΚΕ").areaHint, null);
 });
