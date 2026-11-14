@@ -82,6 +82,7 @@ export function verifyCaseLawFindings(proposed, candidates, lang = "el", questio
   const used = new Set();
   for (const f of proposed.items.slice(0, 12)) {
     if (!f || typeof f.ref !== "string" || !POSITIONS.has(f.position)) continue;
+    if (![f.holding, f.comparison, f.limitation].every(value => typeof value === "string")) continue;
     const source = byRef.get(f.ref);
     if (!source || used.has(source.ref)) continue;
     const excerpt = validatedExcerpt(source.snippets, f.quote);
@@ -93,13 +94,13 @@ export function verifyCaseLawFindings(proposed, candidates, lang = "el", questio
     const crim = area === "criminal" ? criminalDecisionLimit(source.publishedAt, lang) : null;
     // A pre-2019 decision cannot directly support/oppose a point under the current Codes.
     if (crim?.old && (screenedPosition === "supports" || screenedPosition === "opposes")) screenedPosition = "distinguishable";
-    const limitation = plain(
-      crim ? crim.text + f.limitation :
-      screenedPosition !== f.position
-        ? (lang === "en" ? "This decision does not directly concern inheritance renunciation. " :
-          "Η απόφαση δεν αφορά άμεσα αποποίηση κληρονομιάς. ") + f.limitation
-        : f.limitation, 230);
-    if (holding.length < 12 || comparison.length < 12 || String(f.limitation || "").length < 10) continue;
+    const caseLimitation = plain(f.limitation, 230);
+    if (holding.length < 12 || comparison.length < 12 || caseLimitation.length < 10) continue;
+    // Bound the model text FIRST. Mandatory limits must not erase the specific
+    // counter-reading or be truncated themselves (especially pre-2019 findings).
+    const limitation = (crim ? crim.text : screenedPosition !== f.position
+      ? (lang === "en" ? "This decision does not directly concern inheritance renunciation. " :
+        "Η απόφαση δεν αφορά άμεσα αποποίηση κληρονομιάς. ") : "") + caseLimitation;
     used.add(source.ref);
     found.push({
       ref: source.ref, position: screenedPosition, quote: excerpt,

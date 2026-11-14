@@ -3,10 +3,10 @@
 // Never publish a draft without retrieved sources; with mandatory verification,
 // publish only if the verifier marks it fully supported by those sources.
 
-const HIGH_STAKES_RE = /προθεσ|παραγραφ|αποποι|κληρονομ|ακυρ|αγωγ|δικαστ|δικογραφ|δικόγρα|προτάσε|επίδοσ|έφεσ|αναίρεσ|ανακοπ|κατάσχε|πλειστηρια|σύλληψ|κράτησ|φυλάκι|καταδίκ|ποινή|ποινής|αναστολ|μετατροπ|προφυλάκ|αυτόφωρ|περιοριστικ|απόλυση υπό όρο|ποινικό μητρώο|ευμενέστερ|deadline|limitation|appeal|lawsuit|inheritance|renunciation|service of process/i;
+const HIGH_STAKES_RE = /προθεσ|παραγραφ|αποποι|κληρονομ|ακυρ|αγωγ|δικαστ|δικογραφ|δικογρα|προτασε|επιδοσ|εφεσ|αναιρεσ|ανακοπ|κατασχε|πλειστηρια|συλληψ|κρατησ|φυλακι|καταδικ|ποινη|ποινης|αναστολ|μετατροπ|προφυλακ|αυτοφωρ|περιοριστικ|απολυση υπο ορο|ποινικο μητρωο|ευμενεστερ|deadline|limitation|appeal|lawsuit|inheritance|renunciation|service of process|prison|sentence|sentenced|penalty|detention|custody|arrest|bail|parole|conviction/i;
 
 export function requiresIndependentReview(text = "", hasDocument = false) {
-  return Boolean(hasDocument || HIGH_STAKES_RE.test(String(text)));
+  return Boolean(hasDocument || HIGH_STAKES_RE.test(String(text).normalize("NFD").replace(/[\u0300-\u036f]/g, "")));
 }
 
 export function assessEvidence({ sources = [], verification = null, reviewRequested = false, citations = null, lang = "el" } = {}) {

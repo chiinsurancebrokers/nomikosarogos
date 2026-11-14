@@ -7,31 +7,44 @@
 // the CURRENT Ποινικός Κώδικας / ΚΠΔ (ν. 4619/2019 & 4620/2019, in force 1.7.2019, as amended), so acts
 // and decisions before that date may be governed by the previous text, which the sources do not contain.
 
+import { parseGreekDate } from "./temporalLaw.js";
+
 export const NEW_CODES_EFFECTIVE = "2019-07-01";
 
 const plain = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-const CRIMINAL_CONTEXT = /ποινικ|κατηγορ|καταδικ|εφετει|πλημμελ|κακουργ|πταισμ|φυλακ|προφυλακ|ποινη|ποινης|αναιρεσ|συλληψ|αυτοφωρ/;
+const CRIMINAL_CONTEXT = /ποινικ|κατηγορ|καταδικ|εφετει|πλημμελ|κακουργ|πταισμ|φυλακ|προφυλακ|ποινη|ποινης|αναιρεσ|συλληψ|συνελ[αη]β|αυτοφωρ|\b(?:criminal|penal|prison|sentence|sentenced|arrest(?:ed)?|detain(?:ed)?|detention|custody|bail|parole|convict(?:ed|ion)?)\b/;
 const CATEGORY_PATTERNS = {
-  sentence: /ποιν(η|ης|ες|ων)(?![α-ω])|φυλακισ|καθειρξ|χρηματικη ποιν|αναστολη (εκτελεσης|της ποινης)|μετατροπη|απολυση υπο ορο|εκτιση|εκτελεση (της )?ποινης|ποινικο μητρωο|καταδικ/,
-  remedy: /εφεση|αναιρεσ|ανακοπ|ενσταση|ενδικ(ο|α) μεσ|προσφυγη|αιτηση (ανακλησης|αναστολης)|προθεσμι|εκπροθεσμ|επιδοση|κοινοποιηση/,
-  detention: /προφυλακι|προσωρινη κρατηση|περιοριστικ\w* ορο|συλληψ|αυτοφωρ|κρατητηρι/,
-  limitation: /παραγραφ/,
+  sentence: /ποιν(η|ης|ες|ων)(?![α-ω])|φυλακισ|καθειρξ|χρηματικη ποιν|αναστολη (εκτελεσης|της ποινης)|μετατροπη|απολυση υπο ορο|εκτιση|εκτελεση (της )?ποινης|ποινικο μητρωο|καταδικ|\b(?:sentence|sentenced|imprisonment|prison|penalty|parole|conviction)\b/,
+  remedy: /εφεση|αναιρεσ|ανακοπ|ενσταση|ενδικ(ο|α) μεσ|προσφυγη|αιτηση (ανακλησης|αναστολης)|προθεσμι|εκπροθεσμ|επιδοση|κοινοποιηση|\b(?:appeal|cassation|objection|remedy|remedies|deadline|time limit|service)\b/,
+  detention: /προφυλακι|προσωρινη κρατηση|περιοριστικ[α-ω]* ορο|συλληψ|συνελ[αη]β|αυτοφωρ|κρατητηρι|\b(?:arrest|arrested|detention|detained|custody|bail)\b/,
+  limitation: /παραγραφ|\b(?:limitation|time.barred)\b/,
 };
-const OFFENCE_WORD = /τελεσ|διεπραξ|διαπραξ|πραξη|αδικημα|κατηγορι|εγκλημα|περιστατικ/;
+const OFFENCE_WORD = /τελεσ|διεπραξ|διαπραξ|πραξη|αδικημα|κατηγορι|εγκλημα|περιστατικ|\b(?:act|offen[cs]e|committed|crime)\b/;
+const DATE_TOKEN = /(?<!\d)(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{1,2}\s+[α-ωa-z]+\s+\d{4})(?!\d)/gu;
 
-// Years / dates that appear shortly after a word about the act itself.
+// A year alone is a range, not 31 December: 2019 may precede the cut-off.
+// Never rescue an impossible full date by silently using its year instead.
 export function offenceDatesBefore(text, cutoff = NEW_CODES_EFFECTIVE) {
   const t = plain(text);
   const found = [];
-  const re = new RegExp(OFFENCE_WORD.source, "g");
-  let m;
-  while ((m = re.exec(t))) {
-    const window = t.slice(m.index, m.index + 90);
-    const d = /(\d{1,2})[./](\d{1,2})[./]((?:19|20)\d{2})/.exec(window);
-    const y = /\b((?:19|20)\d{2})\b/.exec(window);
-    const iso = d ? `${d[3]}-${d[2].padStart(2, "0")}-${d[1].padStart(2, "0")}` : y ? `${y[1]}-12-31` : null;
-    if (iso && iso < cutoff) found.push(d ? `${d[1]}.${d[2]}.${d[3]}` : y[1]);
+  for (const m of t.matchAll(new RegExp(OFFENCE_WORD.source, "gu"))) {
+    const following = t.slice(m.index, m.index + 90).split(/[!?;\n]|\.(?=\s+[^\d])/u)[0];
+    const preceding = t.slice(Math.max(0, m.index - 55), m.index);
+    const leading = [...preceding.matchAll(DATE_TOKEN)].findLast(d =>
+      /^[\s,]*$/u.test(preceding.slice(d.index + d[0].length)));
+    const dates = [...following.matchAll(DATE_TOKEN)];
+    const candidate = leading?.[0] || dates[0]?.[0];
+    if (candidate) {
+      const iso = parseGreekDate(candidate);
+      if (iso && iso < cutoff) {
+        const [year, month, day] = iso.split("-");
+        found.push(`${Number(day)}.${Number(month)}.${year}`);
+      }
+      continue;
+    }
+    const year = /\b((?:19|20)\d{2})\b/u.exec(following)?.[1];
+    if (year && `${year}-01-01` < cutoff) found.push(year);
   }
   return [...new Set(found)];
 }
@@ -59,61 +72,113 @@ export function criminalCriteriaBlock(stakes) {
   return lines.join("\n");
 }
 
-// PDF text extraction interleaves columns, so «δέκα (10) ... ημέρες» may be split by up to a few
-// lines of unrelated text. Accept a figure if the number appears in the sources with the same unit
-// stem within a short window. This checks PRESENCE, not attribution: it cannot tell which deadline a
-// number belongs to, which is why the independent source check and a lawyer remain required.
-function figureInSources(num, stem, allowed) {
-  const re = new RegExp(`(?<![0-9])${num}(?![0-9])`, "g");
-  let m;
-  while ((m = re.exec(allowed))) {
-    const around = allowed.slice(Math.max(0, m.index - 60), m.index + 260);
-    if (around.includes(stem)) return true;
-  }
-  return false;
+// Presence is not legal attribution. Keep each retrieved excerpt separate so a
+// number at the end of one cannot borrow a unit from the next (or from user facts).
+// A short forward window tolerates interleaved PDF columns after a bracketed figure.
+const UNIT = "ημερ[α-ω]*|μην[α-ω]*|ετ(?:ος|ους|η|ων)|χρον(?:ος|ου|ια|ων)|ωρ[α-ω]*|days?|months?|years?|hours?";
+const NUMBER_WORDS = new Map([
+  ["ενα", 1], ["ενας", 1], ["μια", 1], ["ενος", 1], ["μιας", 1],
+  ["δυο", 2], ["τρεις", 3], ["τρια", 3], ["τριων", 3], ["τεσσερις", 4], ["τεσσερα", 4], ["τεσσαρων", 4],
+  ["πεντε", 5], ["εξι", 6], ["επτα", 7], ["εφτα", 7], ["οκτω", 8], ["οχτω", 8], ["εννεα", 9], ["εννια", 9],
+  ["δεκα", 10], ["εντεκα", 11], ["δωδεκα", 12], ["δεκατρεις", 13], ["δεκατρια", 13], ["δεκατεσσερις", 14], ["δεκατεσσερα", 14],
+  ["δεκαπεντε", 15], ["δεκαεξι", 16], ["δεκαεπτα", 17], ["δεκαοκτω", 18], ["δεκαεννεα", 19],
+  ["εικοσι", 20], ["τριαντα", 30], ["σαραντα", 40], ["πενηντα", 50], ["εξηντα", 60], ["εβδομηντα", 70], ["ογδοντα", 80], ["ενενηντα", 90],
+  ["one", 1], ["two", 2], ["three", 3], ["four", 4], ["five", 5], ["six", 6], ["seven", 7], ["eight", 8], ["nine", 9],
+  ["ten", 10], ["eleven", 11], ["twelve", 12], ["thirteen", 13], ["fourteen", 14], ["fifteen", 15], ["sixteen", 16],
+  ["seventeen", 17], ["eighteen", 18], ["nineteen", 19], ["twenty", 20], ["thirty", 30], ["forty", 40],
+  ["fifty", 50], ["sixty", 60], ["seventy", 70], ["eighty", 80], ["ninety", 90],
+]);
+const wordPattern = [...NUMBER_WORDS.keys()].join("|");
+const compoundNumber = new RegExp(`(?<!\\p{L})(${wordPattern})[ -](${wordPattern})(?!\\p{L})`, "gu");
+function numericText(value) {
+  return plain(value)
+    .replace(compoundNumber, (whole, a, b) => {
+      const tens = NUMBER_WORDS.get(a), ones = NUMBER_WORDS.get(b);
+      return tens >= 20 && tens % 10 === 0 && ones < 10 ? String(tens + ones) : whole;
+    })
+    .replace(/[α-ωa-z]+/gu, word => String(NUMBER_WORDS.get(word) ?? word))
+    .replace(/\*\*|__/gu, "");
 }
 
-const UNIT_STEM = { ημερ: "ημερ", μην: "μην", ετ: "ετ", ωρ: "ωρ" };
-function unsourcedFigures(analysis, allowed) {
-  const bad = [];
-  const re = /(\d{1,3})\s*(ημερ|μην|ετ|ωρ)\w*/g;
-  const t = plain(analysis);
-  let m;
-  while ((m = re.exec(t))) {
-    const sentence = t.slice(Math.max(0, m.index - 140), m.index + 80);
-    if (!/προθεσμ|εντος|ποιν|φυλακ|παραγραφ|αναστολ|διαστημ|καθειρξ|εφεση|αναιρεσ|χρονικ/.test(sentence)) continue;
-    if (figureInSources(m[1], UNIT_STEM[m[2]], allowed)) continue;
-    bad.push(`${m[1]} ${m[2] === "ετ" ? "έτη" : m[2] === "μην" ? "μήνες" : m[2] === "ωρ" ? "ώρες" : "ημέρες"}`);
-  }
-  return [...new Set(bad)];
+function unitKey(unit) {
+  if (/^(?:ημερ|day)/u.test(unit)) return "day";
+  if (/^(?:μην|month)/u.test(unit)) return "month";
+  if (/^(?:ωρ|hour)/u.test(unit)) return "hour";
+  return "year";
+}
+const NUMBER = "\\d+(?:[.,]\\d+)?";
+const AMOUNT = `${NUMBER}(?:\\s*(?:–|—|-|to|εως|ως)\\s*${NUMBER})?`;
+function durationFigures(value) {
+  const t = numericText(value);
+  const re = new RegExp(`(?<![\\p{L}\\d.,/])(${AMOUNT})\\s*\\)?\\s*(${UNIT})(?!\\p{L})`, "gu");
+  return [...t.matchAll(re)].flatMap(m => [...m[1].matchAll(new RegExp(NUMBER, "gu"))]
+    .map(n => ({ number: String(Number(n[0].replace(",", "."))), unit: unitKey(m[2]) })));
+}
+function figureInSources(figure, excerpts) {
+  return excerpts.some(excerpt => {
+    if (durationFigures(excerpt).some(f => f.number === figure.number && f.unit === figure.unit)) return true;
+    // Only bracketed PDF figures may borrow a following unit across interleaved text.
+    const text = numericText(excerpt);
+    const re = new RegExp(`(?<![0-9.,])${figure.number.replace(".", "[.,]")}(?![0-9.,])`, "gu");
+    return [...text.matchAll(re)].some(m => {
+      const before = text.slice(Math.max(0, m.index - 2), m.index);
+      const after = text.slice(m.index + m[0].length, m.index + m[0].length + 260);
+      if (!/\(\s*$/u.test(before) || !/^\s*\)/u.test(after)) return false;
+      const unit = new RegExp(`(${UNIT})(?!\\p{L})`, "gu");
+      return [...after.matchAll(unit)].some(u => unitKey(u[1]) === figure.unit);
+    });
+  });
+}
+function fractionFigures(value) {
+  // Do not mistake a component of DD/MM/YYYY for a sentence fraction.
+  return [...numericText(value).matchAll(/(?<![\d/])\d+\s*\/\s*\d+(?![\d/])/gu)]
+    .map(m => m[0].replace(/\s+/gu, ""))
+    .filter(f => {
+      const denominator = Number(f.split("/")[1]);
+      return denominator < 1900 || denominator > 2100; // law identifiers such as 4619/2019
+    });
+}
+function unsourcedFigures(analysis, excerpts, lang) {
+  const labels = lang === "en" ? { day: "days", month: "months", year: "years", hour: "hours" }
+    : { day: "ημέρες", month: "μήνες", year: "έτη", hour: "ώρες" };
+  const durations = durationFigures(analysis).filter(f => !figureInSources(f, excerpts))
+    .map(f => `${f.number} ${labels[f.unit]}`);
+  const fractions = fractionFigures(analysis).filter(f => !excerpts.some(s => fractionFigures(s).includes(f)));
+  return [...new Set([...durations, ...fractions])];
 }
 
-const ERA_MENTION = /ευμενεστερ|επιεικεστερ|αρθρο 2(?![0-9]).{0,6}πκ|παλαι(ο|ου|ος|α)(?![α-ω])|προηγουμεν\w* (κωδικ|κειμεν|διαταξ)|1\.? ?7\.? ?2019|1 ιουλιου 2019|4619|4620/;
-const PROCEDURE_NAMED = /κπολδ|κωδικα πολιτικης δικονομιας|πολιτικη δικονομια|εκτελεστικη διαδικασια|κεδε|ποινικη δικονομια|κπδ|ποινικη δικη/;
+const ERA_MENTION = /ευμενεστερ|επιεικεστερ|παλαι(?:ο|ου|ος|α)(?![α-ω])|προηγουμεν[α-ω]* (?:κωδικ|κειμεν|διαταξ)|more favou?rable|(?:previous|former|old) (?:code|penal|law|text)/u;
+const PROCEDURE_NAMED = /κπολδ|κωδικα πολιτικης δικονομιας|πολιτικη δικονομια|εκτελεστικη διαδικασια|κεδε|ποινικη δικονομια|κπδ|ποινικη δικη|civil (?:enforcement|procedure|proceedings)|criminal (?:procedure|proceedings|trial)|code of (?:civil|criminal) procedure/u;
 
-export function assessCriminalDraft(analysis, { stakes, sources = [], userText = "" } = {}) {
+export function assessCriminalDraft(analysis, { stakes, sources = [], userText = "", lang = "el" } = {}) {
   if (!stakes?.high) return null;
   const text = plain(analysis);
-  const allowed = plain(sources.map((s) => s.text).join("\n") + "\n" + userText);
-  const bad = unsourcedFigures(analysis, allowed);
+  const allowed = [...sources.map((s) => s.text), userText];
+  const bad = unsourcedFigures(analysis, allowed, lang);
   if (bad.length) {
     return {
       status: "unsourced_criminal_figure", publishDraft: false,
-      message: `Η απάντηση απορρίφθηκε: αναφέρει αριθμούς (${bad.join(", ")}) για προθεσμίες ή ποινές που δεν υπάρχουν στις πηγές ή στα στοιχεία της ερώτησης. Σε ποινικά ζητήματα υψηλού ρίσκου δεν επιτρέπονται αριθμοί από μνήμη. Ελέγξτε το κείμενο του Κώδικα και συμβουλευτείτε δικηγόρο.`,
+      message: lang === "en"
+        ? `The draft contains unsupported durations or fractions (${bad.join(", ")}). Check the retrieved sources and consult a lawyer.`
+        : `Η απάντηση απορρίφθηκε: αναφέρει αριθμούς (${bad.join(", ")}) για προθεσμίες ή ποινές που δεν υπάρχουν στις πηγές ή στα στοιχεία της ερώτησης. Σε ποινικά ζητήματα υψηλού ρίσκου δεν επιτρέπονται αριθμοί από μνήμη. Ελέγξτε το κείμενο του Κώδικα και συμβουλευτείτε δικηγόρο.`,
     };
   }
   if (stakes.oldCodePossible && !ERA_MENTION.test(text)) {
     return {
       status: "criminal_code_era_unaddressed", publishDraft: false,
-      message: "Η απάντηση απορρίφθηκε: η πράξη φαίνεται να τελέστηκε πριν την 1.7.2019 και η απάντηση δεν εξηγεί ότι μπορεί να εφαρμόζεται το προηγούμενο ή το ευμενέστερο κείμενο, το οποίο δεν υπάρχει στις πηγές. Χρειάζεται έλεγχος από δικηγόρο.",
+      message: lang === "en"
+        ? "The act may predate 1 July 2019. The draft does not address the previous or more favourable Code text, which is absent from the sources. Consult a lawyer."
+        : "Η απάντηση απορρίφθηκε: η πράξη φαίνεται να τελέστηκε πριν την 1.7.2019 και η απάντηση δεν εξηγεί ότι μπορεί να εφαρμόζεται το προηγούμενο ή το ευμενέστερο κείμενο, το οποίο δεν υπάρχει στις πηγές. Χρειάζεται έλεγχος από δικηγόρο.",
     };
   }
   // The procedure must be named in the same sentence as the ανακοπή (citing the ΚΠΔ for another remedy is not enough).
-  const anakopiSentences = text.split(/[.;·!?\n]+/).filter((x) => /ανακοπ/.test(x));
-  if (/ανακοπ/.test(plain(userText)) && anakopiSentences.length && !anakopiSentences.every((x) => PROCEDURE_NAMED.test(x))) {
+  const anakopiSentences = text.split(/[.;·!?\n]+/).filter((x) => /ανακοπ|anakopi/.test(x));
+  if (anakopiSentences.length && !anakopiSentences.every((x) => PROCEDURE_NAMED.test(x))) {
     return {
       status: "remedy_procedure_unspecified", publishDraft: false,
-      message: "Η απάντηση απορρίφθηκε: αναφέρεται σε ανακοπή χωρίς να διευκρινίζει σε ποια διαδικασία ανήκει (πολιτική εκτέλεση ή ποινική δίκη). Η προθεσμία και οι κανόνες διαφέρουν. Διευκρινίστε ποια πράξη προσβάλλεται.",
+      message: lang === "en"
+        ? "The draft mentions anakopi without identifying the civil or criminal procedure. Clarify which decision is challenged with a lawyer."
+        : "Η απάντηση απορρίφθηκε: αναφέρεται σε ανακοπή χωρίς να διευκρινίζει σε ποια διαδικασία ανήκει (πολιτική εκτέλεση ή ποινική δίκη). Η προθεσμία και οι κανόνες διαφέρουν. Διευκρινίστε ποια πράξη προσβάλλεται.",
     };
   }
   return null;

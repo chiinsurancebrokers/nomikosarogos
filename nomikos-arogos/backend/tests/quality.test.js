@@ -64,3 +64,9 @@ test("only directly retrieved case law may pass the court-citation gate", () => 
   });
   assert.equal(r.publishDraft, true);
 });
+
+test("independent review also covers English sentencing and accent-free Greek", () => {
+  for (const question of ["What prison sentence applies?", "I am in custody", "Ποια η ποινη;", "Ποτε ασκειται εφεση;", "Συλληψη και κρατηση"]) {
+    assert.equal(requiresIndependentReview(question), true, question);
+  }
+});
