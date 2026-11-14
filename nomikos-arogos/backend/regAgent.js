@@ -76,8 +76,30 @@ async function getBounded(url, fetchImpl, timeoutMs, maxBytes) {
   }
   const declaredLength = Number(res.headers?.get?.("content-length") || 0);
   if (declaredLength > maxBytes) throw new Error("REG: court response exceeds size limit");
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  if (bytes.byteLength > maxBytes) throw new Error("REG: court response exceeds size limit");
+  const reader = res.body?.getReader?.();
+  let bytes;
+  if (reader) {
+    const chunks = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel();
+          throw new Error("REG: court response exceeds size limit");
+        }
+        chunks.push(value);
+      }
+    } finally { reader.releaseLock(); }
+    bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  } else {
+    bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.byteLength > maxBytes) throw new Error("REG: court response exceeds size limit");
+  }
   return { bytes, contentType: res.headers?.get?.("content-type") || "" };
 }
 
