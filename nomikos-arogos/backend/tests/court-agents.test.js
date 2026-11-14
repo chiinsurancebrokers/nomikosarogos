@@ -64,7 +64,8 @@ test("decision indexer uses proper SQL bind markers and all three agents", () =>
   const code = readFileSync(new URL("../decisions.js", import.meta.url), "utf8");
   assert.match(code, /publicationDateAgent\(body\)/);
   assert.match(code, /decisionBodyAgent\(text, entry\.ref\)/);
-  assert.match(code, /provenanceAgent\(\{ url: entry\.url/);
+  assert.match(code, /provenanceAgent\(\{ url: result\.officialUrl/);
+  assert.match(code, /chunkDecisionDocument\(body, entry\.ref, result\.officialUrl/);
   assert.ok(code.includes('Array.from({ length: 8 }'));
   assert.ok(code.includes('"$" + (b + j + 1)'));
 });
