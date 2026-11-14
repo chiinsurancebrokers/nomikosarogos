@@ -56,6 +56,8 @@ const batch = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) =
 export async function ingestOne(d, { retrieved = null } = {}) {
   const entry = validateDecisionManifestEntry(d); // block non-official domains and mismatched URL identifiers
   const result = retrieved || await retrieveCourtDecision(entry.url, { expectedRef: entry.ref });
+  if (result.areaHint && result.areaHint !== d.area)
+    throw new Error("REG: declared civil/criminal area contradicts the official decision division");
   const text = result.body;
   if (text.length < 1500 || looksGarbled(text)) throw new Error("page text too short or garbled — check charset/HTML");
   validateDecisionText({ ...d, url: result.officialUrl }, text);
