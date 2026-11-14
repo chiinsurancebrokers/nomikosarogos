@@ -83,6 +83,10 @@ export async function researchCaseLaw(anthropic, { query, searchText, area = "ci
       "\"comparison\":\"specific factual or procedural comparison\", \"limitation\":\"strongest counter-reading or missing facts\"}]}",
       "At most 5 findings, one per decision. When evidence does not support a finding, return items: [].",
       "This is tentative research subject to independent human legal review.",
+      ...(area === "criminal" ? [
+        "CRIMINAL: state the procedural stage and the ground (e.g. cassation) in the comparison. A cassation court reviews law and reasoning, not facts; an inadmissible or rejected ground is NOT a merits holding.",
+        "Decisions published before 1 July 2019 interpret the previous Penal Code/CCP: say so and never treat them as interpreting current articles. Never state a penalty range, deadline or limitation period unless it is in the excerpt.",
+      ] : []),
     ].join("\n");
     const response = await anthropic.messages.create({
       model: AGENT_MODEL, max_tokens: 2900, system,
@@ -90,7 +94,7 @@ export async function researchCaseLaw(anthropic, { query, searchText, area = "ci
     });
     const raw = (response.content || []).filter((p) => p.type === "text")
       .map((p) => p.text).join("\n");
-    return verifyCaseLawFindings(parseJson(raw), candidates, lang, query);
+    return verifyCaseLawFindings(parseJson(raw), candidates, lang, query, area);
   } catch (err) {
     console.error("case-law research unavailable:", err?.name || "error");
     return emptyCaseLawResult(lang, "unavailable");

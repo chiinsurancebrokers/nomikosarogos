@@ -3,7 +3,7 @@
 // Never publish a draft without retrieved sources; with mandatory verification,
 // publish only if the verifier marks it fully supported by those sources.
 
-const HIGH_STAKES_RE = /προθεσ|παραγραφ|αποποι|κληρονομ|ακυρ|αγωγ|δικαστ|δικογραφ|δικόγρα|προτάσε|επίδοσ|έφεσ|αναίρεσ|ανακοπ|κατάσχε|πλειστηρια|σύλληψ|κράτησ|φυλάκι|καταδίκ|deadline|limitation|appeal|lawsuit|inheritance|renunciation|service of process/i;
+const HIGH_STAKES_RE = /προθεσ|παραγραφ|αποποι|κληρονομ|ακυρ|αγωγ|δικαστ|δικογραφ|δικόγρα|προτάσε|επίδοσ|έφεσ|αναίρεσ|ανακοπ|κατάσχε|πλειστηρια|σύλληψ|κράτησ|φυλάκι|καταδίκ|ποινή|ποινής|αναστολ|μετατροπ|προφυλάκ|αυτόφωρ|περιοριστικ|απόλυση υπό όρο|ποινικό μητρώο|ευμενέστερ|deadline|limitation|appeal|lawsuit|inheritance|renunciation|service of process/i;
 
 export function requiresIndependentReview(text = "", hasDocument = false) {
   return Boolean(hasDocument || HIGH_STAKES_RE.test(String(text)));

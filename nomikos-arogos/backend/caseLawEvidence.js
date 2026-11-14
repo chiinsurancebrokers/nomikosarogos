@@ -2,6 +2,7 @@
 // A model cannot provide a case-law citation or evidence quote unless the exact
 // published decision text was independently retrieved from approved DB rows.
 import { buildSourceLinks } from "./sourceLinks.js";
+import { criminalDecisionLimit } from "./criminalStakes.js";
 
 const POSITIONS = new Set(["supports", "opposes", "distinguishable", "uncertain"]);
 const plain = (s, max = 320) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -73,7 +74,7 @@ export function issueRelevanceGuard(position, question, courtText) {
   return position === "supports" || position === "opposes" ? "distinguishable" : position;
 }
 
-export function verifyCaseLawFindings(proposed, candidates, lang = "el", question = "") {
+export function verifyCaseLawFindings(proposed, candidates, lang = "el", question = "", area = "") {
   if (!Array.isArray(candidates) || !candidates.length) return emptyCaseLawResult(lang);
   if (!proposed || !Array.isArray(proposed.items)) return emptyCaseLawResult(lang, "unavailable");
   const byRef = new Map(candidates.map((d) => [d.ref, d]));
@@ -88,13 +89,17 @@ export function verifyCaseLawFindings(proposed, candidates, lang = "el", questio
     // A model's interpretation is not a judicial finding; display it as assessment.
     const holding = plain(f.holding, 320);
     const comparison = plain(f.comparison, 330);
-    const screenedPosition = issueRelevanceGuard(f.position, question, source.snippets.join(" "));
+    let screenedPosition = issueRelevanceGuard(f.position, question, source.snippets.join(" "));
+    const crim = area === "criminal" ? criminalDecisionLimit(source.publishedAt, lang) : null;
+    // A pre-2019 decision cannot directly support/oppose a point under the current Codes.
+    if (crim?.old && (screenedPosition === "supports" || screenedPosition === "opposes")) screenedPosition = "distinguishable";
     const limitation = plain(
+      crim ? crim.text + f.limitation :
       screenedPosition !== f.position
         ? (lang === "en" ? "This decision does not directly concern inheritance renunciation. " :
           "Η απόφαση δεν αφορά άμεσα αποποίηση κληρονομιάς. ") + f.limitation
         : f.limitation, 230);
-    if (holding.length < 12 || comparison.length < 12 || limitation.length < 10) continue;
+    if (holding.length < 12 || comparison.length < 12 || String(f.limitation || "").length < 10) continue;
     used.add(source.ref);
     found.push({
       ref: source.ref, position: screenedPosition, quote: excerpt,
