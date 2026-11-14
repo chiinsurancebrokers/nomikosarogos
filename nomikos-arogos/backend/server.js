@@ -450,7 +450,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
     ]);
 
     const citations = classifyCitations(analysis, sources);
-    const quality = assessTemporalDraft(analysis, temporal) || assessCriminalDraft(analysis, { stakes: criminal, sources, userText: query }) || assessHistoricalDraft(analysis, historical, lang) || assessEvidence({ sources, verification, reviewRequested, citations, lang });
+    const quality = assessTemporalDraft(analysis, temporal) || assessCriminalDraft(analysis, { stakes: criminal, sources, userText: query, lang }) || assessHistoricalDraft(analysis, historical, lang) || assessEvidence({ sources, verification, reviewRequested, citations, lang });
 
     res.json({
       analysis: quality.publishDraft ? analysis : quality.message,
@@ -528,4 +528,4 @@ ensureFeedbackSchema().catch((e) => console.error("feedback schema init failed:"
 ensureFeederSchema().catch((e) => console.error("feeder schema init failed:", e?.message));
 const legalHistoryReady = ensureLegalHistorySchema();
 legalHistoryReady.catch((e) => console.error("legal history schema init failed:", e?.message));
-app.listen(PORT, () => console.log(`Νομικός Αρωγός backend listening on :${PORT}`));
+export const server = app.listen(PORT, () => console.log(`Νομικός Αρωγός backend listening on :${PORT}`));
