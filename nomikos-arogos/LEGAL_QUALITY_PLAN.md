@@ -61,3 +61,12 @@ The system should not advertise legal accuracy comparable to a lawyer or a comme
 - Each chunk carries its exact official URL. The server publishes clickable official court links only when the domain and decision identifier match.
 - Offline evaluation: capture a response locally, map cases by ID in a private JSON file (`{ "cases": { "inh-1857-old-text": { "analysis": "...", "retrievedSources": [] } } }`), run `npm run evals -- ./evals/answers.json`. This tests textual expectations and citation discipline only; **it is not a certified legal accuracy score**. Do not commit personal case answers to public GitHub.
 - Underlying live Postgres coverage, official URL responsiveness and correctness of legal holdings remain **unverified** until deployed and inspected.
+
+## Growing the decisions corpus (discovery, not scraping)
+
+`areiospagos.gr` indexes/summaries are off-limits (see COURT_SOURCE_POLICY.md) and the site restricts automated access, so there is no scraper of its listings. Official decision URLs carry an opaque `cd` token and cannot be guessed; obtain them from a source that publishes them (e.g. Legal Data Hunter `GR/SupremeCourt` search hits), save the hits as JSON and merge:
+
+```bash
+node discoverDecisions.js hits.json --area civil --topic "παραγραφή" --since 2012
+```
+Only the reference and official URL are stored (deduped, allowlisted, identifier-checked). Then ingest on Railway with the admin API (`{"skipIndexed": true}` runs only new entries as a background job; poll `GET /api/admin/decisions/job`). Entries remain `pending` until a human approves them; the `topic` tag is a discovery hint, not a relevance judgement, and the "ασφάλιση" batch in particular needs a relevance check before approval.

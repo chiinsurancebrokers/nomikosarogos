@@ -107,14 +107,19 @@ export async function setDecisionStatus(ref, approve) {
   return result.rowCount;
 }
 
-export async function ingestManifest(only = null) {
+export async function ingestManifest(only = null, { skipIndexed = false, onProgress } = {}) {
   const list = JSON.parse(await fs.readFile(new URL("./decisions.json", import.meta.url), "utf8"));
-  const todo = only?.length ? list.filter((d) => only.some((o) => d.ref.endsWith(o))) : list;
+  let todo = only?.length ? list.filter((d) => only.some((o) => d.ref.endsWith(o))) : list;
+  if (skipIndexed) {
+    const have = new Set((await listDecisions()).map((r) => r.ref));
+    todo = todo.filter((d) => !have.has(d.ref));
+  }
   const results = [];
   for (const d of todo) {
     try { results.push({ ref: d.ref, ok: true, chunks: await ingestOne(d) }); }
     catch (e) { results.push({ ref: d.ref, ok: false, error: e.message }); }
-    await new Promise((r) => setTimeout(r, 1500));
+    onProgress?.({ done: results.length, total: todo.length, results });
+    await new Promise((r) => setTimeout(r, 1500)); // polite rate toward the court's server
   }
   return results;
 }

@@ -10,9 +10,10 @@ const example = {
   url: "https://www.areiospagos.gr/nomologia/apofaseis_DISPLAY.asp?cd=EXAMPLE&apof=1497_2023",
 };
 
-test("all 23 candidate decisions have matching official URL identifiers (not proof of their text)", () => {
+test("all candidate decisions have matching official URL identifiers (not proof of their text)", () => {
   const files = JSON.parse(readFileSync(new URL("../decisions.json", import.meta.url)));
-  assert.equal(files.length, 23);
+  assert.ok(files.length >= 23);
+  assert.equal(new Set(files.map((d) => d.ref)).size, files.length, "no duplicate refs");
   for (const file of files) assert.equal(validateDecisionManifestEntry(file).ref, file.ref);
 });
 
