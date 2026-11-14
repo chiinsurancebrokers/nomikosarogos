@@ -11,7 +11,7 @@ const text = "Αριθμός 1791/2007\nΤΟ ΔΙΚΑΣΤΗΡΙΟ ΤΟΥ ΑΡΕ�
   "ΣΚΕΦΘΗΚΕ ΣΥΜΦΩΝΑ ΜΕ ΤΟ ΝΟΜΟ\n" +
   ("Η εγγύηση διέπεται από το άρθρο 847 ΑΚ. Αναφέρεται η ΑΠ 14/2006. ".repeat(35)) +
   "\nΓΙΑ ΤΟΥΣ ΛΟΓΟΥΣ ΑΥΤΟΥΣ\nΑπορρίπτει την αίτηση.\n" +
-  "ΔΗΜΟΣΙΕΥΘΗΚΕ σε δημόσια συνεδρίαση στις 15 Ιουνίου 2007.";
+  "ΔΗΜΟΣΙΕΥΘΗΚΕ σε δημόσια συνεδρίαση στις 20 Ιουλίου 2007.";
 const payload = (overrides = {}) => ({ status: "success", case_id: cd, court: "Areios Pagos", document_text: text, ...overrides });
 const jsonResponse = (data) => new Response(JSON.stringify(data), { status: 200, headers: { "content-type": "application/json" } });
 
@@ -42,7 +42,7 @@ test("REG retrieves official JSON, verifies decision/date, and labels references
   });
   assert.equal(calls, 1);
   assert.equal(result.ref, "ΑΠ 1791/2007");
-  assert.equal(result.publishedAt, "2007-06-15");
+  assert.equal(result.publishedAt, "2007-07-20");
   assert.equal(result.officialUrl, official);
   assert.equal(result.transport, "official_json");
   assert.ok(result.body.startsWith("Αριθμός 1791/2007"));
@@ -85,7 +85,7 @@ test("REG falls back only to official HTML for a known display decision", async 
   });
   assert.deepEqual(called, [jsonUrl, official]);
   assert.equal(result.transport, "official_html_fallback");
-  assert.equal(result.publishedAt, "2007-06-15");
+  assert.equal(result.publishedAt, "2007-07-20");
 });
 
 test("REG does not fall back to translated proxy, indexes or unrelated sources", async () => {
@@ -106,4 +106,25 @@ test("REG enforces response byte caps and labels cross-citations as unverified",
   const refs = extractUnverifiedReferences("ΑΠ 11/2020, ΟλΑΠ 14/2006, άρθρο 847 ΑΚ");
   assert.deepEqual(refs.citedDecisions, ["ΑΠ 11/2020", "ΟλΑΠ 14/2006"]);
   assert.equal(refs.verifiedIndividually, false);
+});
+
+test("REG rejects contradictory JSON identity without trying HTML fallback", async () => {
+  const calls = [];
+  await assert.rejects(retrieveCourtDecision(official, {
+    fetchImpl: async (url) => {
+      calls.push(url);
+      return jsonResponse(payload({ case_id: "WRONG" }));
+    },
+  }), /REG_INTEGRITY/);
+  assert.deepEqual(calls, [jsonUrl]);
+});
+
+test("REG refuses duplicate cd and redirects outside the court domain", async () => {
+  assert.throws(() => inspectCourtSourceUrl(jsonUrl + "&cd=WRONG"), /Duplicate/);
+  await assert.rejects(retrieveCourtDecision(jsonUrl, {
+    fetchImpl: async () => ({
+      ok: true, status: 200, url: "https://evil.test/other",
+      headers: { get: () => null }, arrayBuffer: async () => Buffer.from(JSON.stringify(payload())),
+    }),
+  }), /redirected outside/);
 });
