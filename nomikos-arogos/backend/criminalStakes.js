@@ -59,6 +59,20 @@ export function criminalCriteriaBlock(stakes) {
   return lines.join("\n");
 }
 
+// PDF text extraction interleaves columns, so «δέκα (10) ... ημέρες» may be split by up to a few
+// lines of unrelated text. Accept a figure if the number appears in the sources with the same unit
+// stem within a short window. This checks PRESENCE, not attribution: it cannot tell which deadline a
+// number belongs to, which is why the independent source check and a lawyer remain required.
+function figureInSources(num, stem, allowed) {
+  const re = new RegExp(`(?<![0-9])${num}(?![0-9])`, "g");
+  let m;
+  while ((m = re.exec(allowed))) {
+    const around = allowed.slice(Math.max(0, m.index - 60), m.index + 260);
+    if (around.includes(stem)) return true;
+  }
+  return false;
+}
+
 const UNIT_STEM = { ημερ: "ημερ", μην: "μην", ετ: "ετ", ωρ: "ωρ" };
 function unsourcedFigures(analysis, allowed) {
   const bad = [];
@@ -68,8 +82,8 @@ function unsourcedFigures(analysis, allowed) {
   while ((m = re.exec(t))) {
     const sentence = t.slice(Math.max(0, m.index - 140), m.index + 80);
     if (!/προθεσμ|εντος|ποιν|φυλακ|παραγραφ|αναστολ|διαστημ|καθειρξ|εφεση|αναιρεσ|χρονικ/.test(sentence)) continue;
-    const check = new RegExp(`\\b${m[1]}\\)?\\s*${UNIT_STEM[m[2]]}`);
-    if (!check.test(allowed)) bad.push(`${m[1]} ${m[2] === "ετ" ? "έτη" : m[2] === "μην" ? "μήνες" : m[2] === "ωρ" ? "ώρες" : "ημέρες"}`);
+    if (figureInSources(m[1], UNIT_STEM[m[2]], allowed)) continue;
+    bad.push(`${m[1]} ${m[2] === "ετ" ? "έτη" : m[2] === "μην" ? "μήνες" : m[2] === "ωρ" ? "ώρες" : "ημέρες"}`);
   }
   return [...new Set(bad)];
 }
@@ -94,7 +108,9 @@ export function assessCriminalDraft(analysis, { stakes, sources = [], userText =
       message: "Η απάντηση απορρίφθηκε: η πράξη φαίνεται να τελέστηκε πριν την 1.7.2019 και η απάντηση δεν εξηγεί ότι μπορεί να εφαρμόζεται το προηγούμενο ή το ευμενέστερο κείμενο, το οποίο δεν υπάρχει στις πηγές. Χρειάζεται έλεγχος από δικηγόρο.",
     };
   }
-  if (/ανακοπ/.test(plain(userText)) && /ανακοπ/.test(text) && !PROCEDURE_NAMED.test(text)) {
+  // The procedure must be named in the same sentence as the ανακοπή (citing the ΚΠΔ for another remedy is not enough).
+  const anakopiSentences = text.split(/[.;·!?\n]+/).filter((x) => /ανακοπ/.test(x));
+  if (/ανακοπ/.test(plain(userText)) && anakopiSentences.length && !anakopiSentences.every((x) => PROCEDURE_NAMED.test(x))) {
     return {
       status: "remedy_procedure_unspecified", publishDraft: false,
       message: "Η απάντηση απορρίφθηκε: αναφέρεται σε ανακοπή χωρίς να διευκρινίζει σε ποια διαδικασία ανήκει (πολιτική εκτέλεση ή ποινική δίκη). Η προθεσμία και οι κανόνες διαφέρουν. Διευκρινίστε ποια πράξη προσβάλλεται.",

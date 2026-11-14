@@ -73,3 +73,17 @@ test("criminal eval suite is well-formed", () => {
   const suite = JSON.parse(fs.readFileSync(new URL("../evals/criminal.json", import.meta.url), "utf8"));
   assert.ok(suite.cases.length >= 4 && suite.cases.every((c) => c.id && c.question && c.why));
 });
+
+test("figure check tolerates column-interleaved PDF text but still rejects a number that is absent", () => {
+  const stakes = classifyCriminalStakes("Καταδικάστηκα, ποια η προθεσμία για έφεση;", "criminal");
+  const garbled = [{ ref: "ΚΠΔ 473", text: "Όπου ειδική διάταξη νόμου δεν ορίζει διαφορετικά, η\nχειρότερη η θέση του ούτε να ανακληθούν τα προθεσμία για την άσκηση ενδίκων μέσων είναι δέκα (10)\nευεργετήματα που δόθηκαν με την απόφαση που ημέρες από τη δημοσίευση της απόφασης." }];
+  assert.equal(assessCriminalDraft("Η προθεσμία για έφεση είναι 10 ημέρες.", { stakes, sources: garbled }), null);
+  assert.equal(assessCriminalDraft("Η προθεσμία για έφεση είναι 5 ημέρες.", { stakes, sources: garbled }).status, "unsourced_criminal_figure");
+});
+
+test("citing the ΚΠΔ for another remedy does not satisfy the ανακοπή procedure check", () => {
+  const userText = "Μετά την καταδίκη ποια η προθεσμία έφεσης και ανακοπής;";
+  const stakes = classifyCriminalStakes(userText, "criminal");
+  assert.equal(assessCriminalDraft("Η έφεση ασκείται κατά το ΚΠΔ. Μπορείτε επίσης να ασκήσετε ανακοπή.", { stakes, userText }).status, "remedy_procedure_unspecified");
+  assert.equal(assessCriminalDraft("Η έφεση ασκείται κατά το ΚΠΔ. Η ανακοπή ανήκει στην πολιτική εκτέλεση του ΚΠολΔ.", { stakes, userText }), null);
+});
