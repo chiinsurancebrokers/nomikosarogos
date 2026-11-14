@@ -23,6 +23,7 @@ import { classifyCitations } from "./citations.js";
 import { buildSourceLinks } from "./sourceLinks.js";
 import { adminDecisions } from "./adminDecisions.js";
 import { researchCaseLaw } from "./caseLawResearch.js";
+import { classifyCriminalStakes, criminalCriteriaBlock, assessCriminalDraft } from "./criminalStakes.js";
 import { determineInheritanceLaw, guardInheritanceSources, assessTemporalDraft, temporalNotice, INHERITANCE_REFORM } from "./temporalLaw.js";
 import { fetchInheritanceArticle } from "./applicableLawSource.js";
 import { inheritancePreflight, mergeSessionFacts, sanitizeSessionFacts } from "./sessionContext.js";
@@ -154,7 +155,7 @@ Use these sections (omit one only if it truly does not apply):
 End with a short list "Not verified" naming every statute, amendment, date or decision you could not confirm from the sources.`;
 
 // ── 2. System prompt (grounded) ──────────────────────────────────────────────
-function buildSystemPrompt(lang, area, sources, docFacts = "", audience = "citizen", temporal = null, historical = null) {
+function buildSystemPrompt(lang, area, sources, docFacts = "", audience = "citizen", temporal = null, historical = null, criminal = null) {
   const replyLang = lang === "en" ? "English" : "Greek";
   const areaName =
     area === "civil"
@@ -212,7 +213,7 @@ EXAMPLE of case (B) — clarify instead of guessing (do not copy the wording; ma
 User: «Θέλω να μάθω για την εγγύηση.»
 Good response: a warm one-line opening, then: «Για να βρω τον σωστό νόμο χρειάζομαι μια διευκρίνιση — εννοείτε την εγγύηση (εγγυοδοσία) σε μίσθωση κατοικίας, την εγγύηση/εγγυητή σε δάνειο, ή την εγγύηση καλής εκτέλεσης σε σύμβαση;» — then stop and wait. (Reason: «εγγύηση» maps to different articles per sense; guessing would cite the wrong law.)
 
-${historical?.status === "selected" ? `APPROVED HISTORICAL LAW REGISTRY: the legally relevant event is ${historical.eventType} on ${historical.eventDate}. The applicable verified historical text is ${historical.version.ref} (source: ${historical.version.sourceUrl}). Do NOT substitute the current wording or an unapproved version. Quote this exact reference.\n\n` : ""}${temporal?.applicableArticle ? `DETERMINISTIC EVENT-TIME LAW SELECTION: date of death ${temporal.deathDate}; apply ${temporal.applicableArticle}; transition ${INHERITANCE_REFORM.sourceRef}; do not substitute the opposite version or its article number. Explicit exceptions in Article 33 must be separately considered.\n\n` : ""}${audience === "lawyer" ? LAWYER_BLOCK + "\n\n" : ""}${docFacts ? `FACTS EXTRACTED FROM THE USER'S DOCUMENT (by a separate reader; treat as the user's situation, not as law):\n${docFacts}\n\n` : ""}RETRIEVED SOURCES:
+${historical?.status === "selected" ? `APPROVED HISTORICAL LAW REGISTRY: the legally relevant event is ${historical.eventType} on ${historical.eventDate}. The applicable verified historical text is ${historical.version.ref} (source: ${historical.version.sourceUrl}). Do NOT substitute the current wording or an unapproved version. Quote this exact reference.\n\n` : ""}${temporal?.applicableArticle ? `DETERMINISTIC EVENT-TIME LAW SELECTION: date of death ${temporal.deathDate}; apply ${temporal.applicableArticle}; transition ${INHERITANCE_REFORM.sourceRef}; do not substitute the opposite version or its article number. Explicit exceptions in Article 33 must be separately considered.\n\n` : ""}${criminal?.high ? criminalCriteriaBlock(criminal) + "\n\n" : ""}${audience === "lawyer" ? LAWYER_BLOCK + "\n\n" : ""}${docFacts ? `FACTS EXTRACTED FROM THE USER'S DOCUMENT (by a separate reader; treat as the user's situation, not as law):\n${docFacts}\n\n` : ""}RETRIEVED SOURCES:
 ${sourceBlock}`;
 }
 
@@ -243,7 +244,7 @@ function buildUserContent({ question, document }) {
 }
 
 // ── 4. Claude analysis over the full conversation ────────────────────────────
-async function analyzeWithClaude({ history, area, lang, mode, audience = "citizen", document, sources, docFacts, temporal = null, historical = null }) {
+async function analyzeWithClaude({ history, area, lang, mode, audience = "citizen", document, sources, docFacts, temporal = null, historical = null, criminal = null }) {
   const model = mode === "deep" || audience === "lawyer" ? CLAUDE_DEEP_MODEL : CLAUDE_QUICK_MODEL;
 
   // Map the thread to Anthropic messages (must start with 'user' and alternate).
@@ -269,7 +270,7 @@ async function analyzeWithClaude({ history, area, lang, mode, audience = "citize
     model,
     max_tokens: mode === "deep" || audience === "lawyer" ? 8000 : 4000,
     // Note: Opus 4.7+ rejects temperature/top_p — so we don't set them.
-    system: buildSystemPrompt(lang, area, sources, docFacts, audience, temporal, historical),
+    system: buildSystemPrompt(lang, area, sources, docFacts, audience, temporal, historical, criminal),
     messages,
   });
   return (msg.content || [])
@@ -354,6 +355,7 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
 
     const query = [userText, extractedDocFacts?.summary, (extractedDocFacts?.searchTerms || []).join(", ")]
       .filter(Boolean).join("\n") || "document";
+    const criminal = classifyCriminalStakes(query, area);
     // A renunciation case cannot be assessed without its triggering death date.
     if (temporal.issue === "renunciation_annulment" &&
         ["date_required", "conflicting_death_dates"].includes(temporal.status)) {
@@ -435,20 +437,20 @@ app.post("/api/analyze", requireAuth, async (req, res) => {
 
     const [analysis, caseLaw] = await Promise.all([
       analyzeWithClaude({
-        history, area, lang, mode, audience, document, sources, docFacts: docFactsBlock(extractedDocFacts || docFacts), temporal, historical,
+        history, area, lang, mode, audience, document, sources, docFacts: docFactsBlock(extractedDocFacts || docFacts), temporal, historical, criminal,
       }),
       caseLawTask,
     ]);
 
     // Documents, proceedings, dates and lawyer mode ALWAYS get independent review.
-    const reviewRequested = mode === "deep" || audience === "lawyer" || caseLawRequested || historical.status === "selected" || temporal.status !== "not_applicable" || requiresIndependentReview(userText, hasDocument);
+    const reviewRequested = mode === "deep" || audience === "lawyer" || caseLawRequested || historical.status === "selected" || temporal.status !== "not_applicable" || criminal.high || requiresIndependentReview(userText, hasDocument);
     const [currency, verification] = await Promise.all([
       currencyAgent(anthropic, { answer: analysis, sources, lang }),
       reviewRequested ? verifyWithOpenAI({ analysis, sources, lang }) : Promise.resolve(null),
     ]);
 
     const citations = classifyCitations(analysis, sources);
-    const quality = assessTemporalDraft(analysis, temporal) || assessHistoricalDraft(analysis, historical, lang) || assessEvidence({ sources, verification, reviewRequested, citations, lang });
+    const quality = assessTemporalDraft(analysis, temporal) || assessCriminalDraft(analysis, { stakes: criminal, sources, userText: query }) || assessHistoricalDraft(analysis, historical, lang) || assessEvidence({ sources, verification, reviewRequested, citations, lang });
 
     res.json({
       analysis: quality.publishDraft ? analysis : quality.message,

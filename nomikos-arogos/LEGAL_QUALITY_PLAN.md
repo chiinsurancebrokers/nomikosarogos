@@ -70,3 +70,16 @@ The system should not advertise legal accuracy comparable to a lawyer or a comme
 node discoverDecisions.js hits.json --area civil --topic "παραγραφή" --since 2012
 ```
 Only the reference and official URL are stored (deduped, allowlisted, identifier-checked). Then ingest on Railway with the admin API (`{"skipIndexed": true}` runs only new entries as a background job; poll `GET /api/admin/decisions/job`). Entries remain `pending` until a human approves them; the `topic` tag is a discovery hint, not a relevance judgement, and the "ασφάλιση" batch in particular needs a relevance check before approval.
+
+## High-stakes criminal criteria (`criminalStakes.js`)
+
+Applies when a criminal question touches **sentence** (ποινή, αναστολή, μετατροπή, απόλυση υπό όρο), **remedies/deadlines** (έφεση, αναίρεση, ανακοπή/ένσταση, προθεσμία), **detention** (σύλληψη, προφυλάκιση) or **limitation** (παραγραφή). Then:
+
+1. **Code era.** The knowledge base holds the *current* ΠΚ/ΚΠΔ (ν. 4619/4620/2019, in force 1.7.2019). For acts before that date the previous text / more favourable law may apply and is not in the sources; a draft that ignores this is rejected. Criminal AP decisions published before 1.7.2019 interpret the previous Codes and can only be shown as *distinguishable*.
+2. **No figures from memory.** Any number of days/months/years near a deadline or penalty must appear in the retrieved sources or the user's own facts; otherwise the draft is withheld.
+3. **Remedy identity.** «Ανακοπή» is mainly civil-procedure; the draft must say which procedure it belongs to. Stage, challenged decision and start event (publication/service) are required; missing ones must be asked for.
+4. **Sentence.** Imposed vs served, full arithmetic, all conditions, no outcome prediction.
+5. **Liberty at stake.** Immediate lawyer referral; no unsourced phone numbers.
+6. **Case law.** A cassation ruling reviews law and reasoning, not facts; a rejected/inadmissible ground is not a merits holding. These limits are appended to every criminal decision finding.
+
+High-stakes criminal questions always get the independent source check. Offline cases: `npm run evals -- answers.json --suite criminal`. The expected conclusions need lawyer approval before they count as a benchmark. These are guard rails, not legal accuracy: a lawyer must still approve the criteria, especially the era cut-off and the treatment of ανακοπή.
