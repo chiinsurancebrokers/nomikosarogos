@@ -60,7 +60,6 @@ test("REG rejects mismatched identity, missing publication and non-success paylo
   for (const overrides of [
     { case_id: "DIFFERENT" },
     { court: "Other Court" },
-    { document_text: text.replace("1791/2007", "1792/2007") },
     { document_text: text.replace(/ΔΗΜΟΣΙΕΥΘΗΚΕ[\s\S]*/, "") },
     { status: "not_found" },
   ]) {
@@ -68,6 +67,10 @@ test("REG rejects mismatched identity, missing publication and non-success paylo
       fetchImpl: async () => jsonResponse(payload(overrides)),
     }), /REG/);
   }
+  await assert.rejects(retrieveCourtDecision(official, {
+    allowHtmlFallback: false,
+    fetchImpl: async () => jsonResponse(payload({ document_text: text.replace("1791/2007", "1792/2007") })),
+  }), /mismatch/);
 });
 
 test("REG falls back only to official HTML for a known display decision", async () => {
