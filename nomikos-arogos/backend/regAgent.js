@@ -24,6 +24,8 @@ export function inspectCourtSourceUrl(value) {
     throw new Error("Only an individual decision page or JSON decision endpoint is accepted");
   if (host === TRANSLATED && path !== DISPLAY.toLowerCase())
     throw new Error("Translation proxy is only accepted for a decision display link");
+  if (url.searchParams.getAll("cd").length !== 1 || url.searchParams.getAll("apof").length > 1)
+    throw new Error("Duplicate or missing court identity parameters");
   const cd = url.searchParams.get("cd") || "";
   if (!/^[A-Za-z0-9]{1,64}$/.test(cd))
     throw new Error("Missing or malformed court case id (cd)");
@@ -137,12 +139,17 @@ export async function retrieveCourtDecision(sourceUrl, { fetchImpl = fetch, time
   try {
     const { bytes } = await getBounded(source.jsonUrl, fetchImpl, timeoutMs, maxBytes);
     const data = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-    if (!data || data.status !== "success" || data.case_id !== source.cd || data.court !== "Areios Pagos" ||
-        typeof data.document_text !== "string" || data.document_text.length < 1500)
-      throw new Error("REG: JSON metadata or full text invalid");
+    if (!data || data.status !== "success" || typeof data.document_text !== "string" || data.document_text.length < 1500)
+      throw new Error("REG: JSON status or full text invalid");
+    if (data.case_id !== source.cd || data.court !== "Areios Pagos")
+      throw new Error("REG_INTEGRITY: JSON case identity or court mismatch");
     const verified = completeDecision(data.document_text, source, expectedRef || source.ref);
     return { ...verified, transport: "official_json", ...extractUnverifiedReferences(verified.body) };
-  } catch (error) { jsonFailure = error; }
+  } catch (error) {
+    if (String(error.message).startsWith("REG_INTEGRITY:") || String(error.message).includes("case id / decision number mismatch"))
+      throw error; // A contradictory identity is not a transient transport failure.
+    jsonFailure = error;
+  }
   if (!allowHtmlFallback || !source.ref || source.inputKind !== "display")
     throw new Error("REG: JSON retrieval rejected: " + jsonFailure.message);
   try {
