@@ -16,6 +16,7 @@ import { embed, EMBED_MODEL } from "./embeddings.js";
 import { chunkDecisionDocument, looksGarbled } from "./chunking.js";
 import { validateDecisionManifestEntry, validateDecisionText, candidateFromOfficialUrl } from "./decisionValidation.js";
 import { publicationDateAgent, decisionBodyAgent, provenanceAgent } from "./courtAgents.js";
+import { retrieveCourtDecision, inspectCourtSourceUrl } from "./regAgent.js";
 
 const ENTITIES = { "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&laquo;": "«", "&raquo;": "»" };
 
@@ -52,17 +53,17 @@ async function fetchDecision(url) {
 
 const batch = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 
-export async function ingestOne(d) {
+export async function ingestOne(d, { retrieved = null } = {}) {
   const entry = validateDecisionManifestEntry(d); // block non-official domains and mismatched URL identifiers
-  const html = await fetchDecision(entry.url);
-  const text = htmlToText(html).normalize("NFC");
+  const result = retrieved || await retrieveCourtDecision(entry.url, { expectedRef: entry.ref });
+  const text = result.body;
   if (text.length < 1500 || looksGarbled(text)) throw new Error("page text too short or garbled — check charset/HTML");
-  validateDecisionText(d, text); // reject an HTML error page or the WRONG decision
-  // Source agents use the full decision body, not the site's headnotes or index.
+  validateDecisionText({ ...d, url: result.officialUrl }, text);
+  // REG returns only verified full decision text; summaries and indexes are never ingested.
   const body = decisionBodyAgent(text, entry.ref);
   const publication = publicationDateAgent(body);
-  const provenance = provenanceAgent({ url: entry.url, decisionRef: entry.ref, publishedAt: publication.publishedAt });
-  const rows = chunkDecisionDocument(body, entry.ref, entry.url, provenance.publishedAt);
+  const provenance = provenanceAgent({ url: result.officialUrl, decisionRef: entry.ref, publishedAt: publication.publishedAt });
+  const rows = chunkDecisionDocument(body, entry.ref, result.officialUrl, provenance.publishedAt);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -89,6 +90,18 @@ export async function ingestOne(d) {
     client.release();
   }
   return rows.length; // review_status=pending; not searchable until approved by a human
+}
+
+// Accept an official display URL, an exact Google Translate display link, or
+// the official JSON endpoint with cd only. REG derives and verifies the reference
+// from the decision heading; the final stored provenance is ALWAYS the official URL.
+export async function ingestOfficialCourtUrl(url, area) {
+  inspectCourtSourceUrl(url);
+  if (!["civil", "criminal"].includes(area)) throw new Error("Invalid decision area");
+  const retrieved = await retrieveCourtDecision(url);
+  const candidate = { ref: retrieved.ref, court: "Άρειος Πάγος", area, url: retrieved.officialUrl };
+  const chunks = await ingestOne(candidate, { retrieved });
+  return { ref: candidate.ref, chunks, transport: retrieved.transport };
 }
 
 export async function listDecisions() {
@@ -133,9 +146,8 @@ async function main() {
       const url = process.argv[urlAt + 1];
       const areaAt = process.argv.indexOf("--area");
       const area = areaAt >= 0 ? process.argv[areaAt + 1] : "";
-      const candidate = candidateFromOfficialUrl(url, area);
-      const count = await ingestOne(candidate);
-      console.log(candidate.ref + ": " + count + " chunks pending human review");
+      const result = await ingestOfficialCourtUrl(url, area);
+      console.log(result.ref + ": " + result.chunks + " chunks pending human review (" + result.transport + ")");
     } catch (e) {
       console.error("Official URL import rejected: " + e.message);
       process.exitCode = 1;
