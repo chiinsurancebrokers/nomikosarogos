@@ -7,8 +7,8 @@
 
 import crypto from "node:crypto";
 import { Router } from "express";
-import { ingestOne, ingestManifest, listDecisions, setDecisionStatus } from "./decisions.js";
-import { candidateFromOfficialUrl } from "./decisionValidation.js";
+import { ingestOfficialCourtUrl, ingestManifest, listDecisions, setDecisionStatus } from "./decisions.js";
+import { inspectCourtSourceUrl } from "./regAgent.js";
 
 export function safeEqual(a, b) {
   const ha = crypto.createHash("sha256").update(String(a)).digest();
@@ -47,8 +47,12 @@ adminDecisions.post("/decisions/ingest", (req, res) => {
   try {
     const { url, area, only, skipIndexed } = req.body || {};
     if (url) {
-      const c = candidateFromOfficialUrl(String(url), String(area || ""));
-      return res.status(202).json(startJob(async () => [{ ref: c.ref, ok: true, chunks: await ingestOne(c) }]));
+      inspectCourtSourceUrl(String(url));
+      if (!["civil", "criminal"].includes(area)) throw new Error("Invalid decision area");
+      return res.status(202).json(startJob(async () => {
+        const result = await ingestOfficialCourtUrl(String(url), area);
+        return [{ ...result, ok: true }];
+      }));
     }
     const list = Array.isArray(only) ? only.map(String) : null;
     res.status(202).json(startJob((onProgress) => ingestManifest(list, { skipIndexed: !!skipIndexed, onProgress })));
